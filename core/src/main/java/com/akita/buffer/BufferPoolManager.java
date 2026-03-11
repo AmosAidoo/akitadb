@@ -47,7 +47,7 @@ public class BufferPoolManager {
                 Frame frame = pageTable.get(pageId);
                 if (frame != null) {
                     replacer.recordAccess(frame.getFrameId(), pageId);
-                    return ReadPageGuard.create(pageId, frame);
+                    return ReadPageGuard.create(pageId, frame, replacer);
                 }
 
                 if (!freeFrames.isEmpty()) {
@@ -71,7 +71,7 @@ public class BufferPoolManager {
             Frame frame = frames.get(frameId);
             pageTable.put(pageId, frame);
             replacer.recordAccess(frameId, pageId);
-            return ReadPageGuard.create(pageId, frame);
+            return ReadPageGuard.create(pageId, frame, replacer);
         } finally {
             latch.unlock();
         }

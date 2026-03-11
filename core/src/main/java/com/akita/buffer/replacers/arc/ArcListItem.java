@@ -9,7 +9,7 @@ class ArcListItem {
     private ArcListItem prev = null;
     private ArcListItem next = null;
     private ArcLocation location;
-    private boolean isEvictable = true;
+    private boolean isEvictable = false;
 
     private ArcListItem(FrameId frameId, PageId pageId, ArcLocation location) {
         this.pageId = pageId;
