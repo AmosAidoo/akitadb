@@ -12,6 +12,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -21,6 +22,7 @@ import java.util.concurrent.locks.ReentrantLock;
 public class BufferPoolManager {
     private final ExecutorService callbackExecutor = Executors.newSingleThreadExecutor();
     private final ReentrantLock latch = new ReentrantLock();
+    private final Condition frameAvailable = latch.newCondition();
     private final DiskScheduler diskScheduler;
     private final Replacer replacer;
     private final Map<FrameId, Frame> frames;
@@ -39,74 +41,95 @@ public class BufferPoolManager {
         return new BufferPoolManager(diskScheduler, replacer, frames, pageTable);
     }
 
-    public ReadPageGuard readPage(PageId pageId) throws InterruptedException, ExecutionException {
-        FrameId frameId;
+    // Extracted helper: finds a free frameId or waits until one becomes available.
+    // Must be called with latch held. Uses a while loop around await() — this is
+    // the standard pattern because await() can wake spuriously (OS-level behaviour),
+    // so you always re-check the condition after waking up.
+    private FrameId acquireFrameId() throws InterruptedException {
         while (true) {
-            latch.lock();
-            try {
-                Frame frame = pageTable.get(pageId);
-                if (frame != null) {
-                    replacer.recordAccess(frame.getFrameId(), pageId);
-                    return ReadPageGuard.create(pageId, frame, replacer);
-                }
-
-                if (!freeFrames.isEmpty()) {
-                    frameId = freeFrames.remove().getFrameId();
-                    break;
-                }
-
-                frameId = replacer.evict();
-                if (frameId != null) {
-                    break;
-                }
-            } finally {
-                latch.unlock();
+            if (!freeFrames.isEmpty()) {
+                return freeFrames.remove().getFrameId();
             }
+
+            FrameId frameId = replacer.evict();
+            if (frameId != null) {
+                return frameId;
+            }
+
+            // All frames are pinned. Release the latch and sleep until
+            // a frame becomes available (signalled from unpin/delete).
+            frameAvailable.await();
+        }
+    }
+
+    public ReadPageGuard readPage(PageId pageId) throws InterruptedException, ExecutionException {
+        latch.lock();
+        try {
+            // Page already in buffer pool — fast path, no disk I/O needed
+            Frame frame = pageTable.get(pageId);
+            if (frame != null) {
+                replacer.recordAccess(frame.getFrameId(), pageId);
+                return ReadPageGuard.create(pageId, frame, replacer, this);
+            }
+        } finally {
+            latch.unlock();
         }
 
+        // Page not in pool — we need to find a frame, read from disk, then load it.
+        // acquireFrameId() blocks here (without spinning) if no frame is available.
+        latch.lock();
+        FrameId frameId;
+        try {
+            frameId = acquireFrameId();
+        } finally {
+            latch.unlock();
+        }
+
+        // Disk I/O happens outside the latch — we don't want to hold the lock
+        // while waiting on disk since that would block all other threads.
         Future<ByteBuffer> future = diskScheduler.schedulePageRead(pageId);
         ByteBuffer data = future.get();
+
         latch.lock();
         try {
             Frame frame = frames.get(frameId);
+            frame.getData().put(data);
             pageTable.put(pageId, frame);
             replacer.recordAccess(frameId, pageId);
-            return ReadPageGuard.create(pageId, frame, replacer);
+            return ReadPageGuard.create(pageId, frame, replacer, this);
         } finally {
             latch.unlock();
         }
     }
 
     public WritePageGuard writePage(PageId pageId) throws InterruptedException, ExecutionException {
-        FrameId frameId;
-        while (true) {
-            latch.lock();
-            try {
-                Frame frame = pageTable.get(pageId);
-                if (frame != null) {
-                    replacer.recordAccess(frame.getFrameId(), pageId);
-                    return WritePageGuard.create(pageId, frame, this);
-                }
-
-                if (!freeFrames.isEmpty()) {
-                    frameId = freeFrames.remove().getFrameId();
-                    break;
-                }
-
-                frameId = replacer.evict();
-                if (frameId != null) {
-                    break;
-                }
-            } finally {
-                latch.unlock();
+        latch.lock();
+        try {
+            Frame frame = pageTable.get(pageId);
+            if (frame != null) {
+                replacer.recordAccess(frame.getFrameId(), pageId);
+                return WritePageGuard.create(pageId, frame, this);
             }
+        } finally {
+            latch.unlock();
+        }
+
+        latch.lock();
+        FrameId frameId;
+        try {
+            frameId = acquireFrameId();
+        } finally {
+            latch.unlock();
         }
 
         Future<ByteBuffer> future = diskScheduler.schedulePageRead(pageId);
         ByteBuffer data = future.get();
+
         latch.lock();
         try {
             Frame frame = frames.get(frameId);
+            // FIX: same data load fix as readPage
+            frame.getData().put(data);
             pageTable.put(pageId, frame);
             replacer.recordAccess(frameId, pageId);
             return WritePageGuard.create(pageId, frame, this);
@@ -177,8 +200,26 @@ public class BufferPoolManager {
             pageTable.remove(pageId);
             freeFrames.add(frame);
             replacer.remove(frame.getFrameId());
+
+            // A frame just became free — wake any threads waiting in acquireFrameId()
+            frameAvailable.signalAll();
+
             // TODO: Deallocate this page in disk scheduler to make it available again
             return true;
+        } finally {
+            latch.unlock();
+        }
+    }
+
+    // Called by the guards when a page is unpinned (via close()).
+    // If the frame becomes evictable again, waiting threads should be notified.
+    public void onPageUnpinned(PageId pageId) {
+        latch.lock();
+        try {
+            Frame frame = pageTable.get(pageId);
+            if (frame != null && frame.getPinCount() == 0) {
+                frameAvailable.signalAll();
+            }
         } finally {
             latch.unlock();
         }

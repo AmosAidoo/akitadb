@@ -43,5 +43,6 @@ public class WritePageGuard implements AutoCloseable{
     public void close() {
         frame.unpin();
         frame.getWriteLatch().unlock();
+        bufferPoolManager.onPageUnpinned(pageId);
     }
 }

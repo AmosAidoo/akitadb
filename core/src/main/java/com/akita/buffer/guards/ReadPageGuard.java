@@ -1,5 +1,6 @@
 package com.akita.buffer.guards;
 
+import com.akita.buffer.BufferPoolManager;
 import com.akita.buffer.DiskScheduler;
 import com.akita.buffer.Frame;
 import com.akita.buffer.PageId;
@@ -11,18 +12,20 @@ public class ReadPageGuard implements AutoCloseable {
     private final PageId pageId;
     private final Frame frame;
     private final Replacer replacer;
+    private final BufferPoolManager bufferPoolManager;
 
-    private ReadPageGuard(PageId pageId, Frame frame, Replacer replacer) {
+    private ReadPageGuard(PageId pageId, Frame frame, Replacer replacer, BufferPoolManager bufferPoolManager) {
         this.pageId = pageId;
         this.frame = frame;
         this.replacer = replacer;
+        this.bufferPoolManager = bufferPoolManager;
     }
 
-    public static ReadPageGuard create(PageId pageId, Frame frame, Replacer replacer) {
+    public static ReadPageGuard create(PageId pageId, Frame frame, Replacer replacer, BufferPoolManager bufferPoolManager) {
         frame.getReadLatch().lock();
         frame.pin();
         replacer.setEvictable(frame.getFrameId(), false);
-        return new ReadPageGuard(pageId, frame, replacer);
+        return new ReadPageGuard(pageId, frame, replacer, bufferPoolManager);
     }
 
     public PageId getPageId() {
@@ -42,6 +45,7 @@ public class ReadPageGuard implements AutoCloseable {
         frame.unpin();
         replacer.setEvictable(frame.getFrameId(), true);
         frame.getReadLatch().unlock();
+        bufferPoolManager.onPageUnpinned(pageId);
     }
 
     public Replacer getReplacer() {

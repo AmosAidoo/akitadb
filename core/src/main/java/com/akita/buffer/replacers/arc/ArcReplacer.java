@@ -110,7 +110,9 @@ public class ArcReplacer implements Replacer {
                 switch (location) {
                     case T1:
                         t1.removeFromList(item);
-                        // Deliberate fall through
+                        item.setLocation(ArcLocation.T2);
+                        t2.mruInsert(item);
+                        break;
                     case T2:
                         t2.removeFromList(item);
                         item.setLocation(ArcLocation.T2);
