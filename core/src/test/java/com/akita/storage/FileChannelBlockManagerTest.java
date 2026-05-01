@@ -1,8 +1,10 @@
 package com.akita.storage;
 
 import com.akita.storage.*;
+import com.akita.testing.AkitaExtension;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -11,30 +13,22 @@ import java.nio.file.Path;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+@ExtendWith(AkitaExtension.class)
 class FileChannelBlockManagerTest {
-    @TempDir(cleanup = CleanupMode.ON_SUCCESS)
-    private static Path tempDir;
-    private static FileChannelVFS fileChannelVFS;
-    private static BlockManager blockManager;
-    private static ContainerManager containerManager;
-
-    @BeforeAll
-    static void setUp() {
-        fileChannelVFS = FileChannelVFS.create(tempDir);
-        blockManager = FileChannelBlockManager.create(fileChannelVFS);
-        containerManager = FileChannelContainerManager.create(fileChannelVFS);
-    }
-
     @Test
-    void allocatesCorrectBlockSize() throws IOException {
-        ContainerId containerId = containerManager.createContainer();
-        VFSFile file = fileChannelVFS.open(containerId);
+    void allocatesCorrectBlockSize(
+            FileChannelBlockManager bm,
+            FileChannelContainerManager cm,
+            FileChannelVFS vfs  // you'll need to expose this from the extension
+    ) throws Exception {
+        ContainerId containerId = cm.createContainer();
+        VFSFile file = vfs.open(containerId);
 
-        blockManager.allocateBlock(containerId, 0);
+        bm.allocateBlock(containerId, 0);
         assertThat(file.size()).isEqualTo(BlockManager.BLOCK_SIZE);
 
-        blockManager.allocateBlock(containerId, 9);
-        assertThat(file.size()).isEqualTo(10 * BlockManager.BLOCK_SIZE);
+        bm.allocateBlock(containerId, 9);
+        assertThat(file.size()).isEqualTo(10L * BlockManager.BLOCK_SIZE);
     }
 
 //    @Test
