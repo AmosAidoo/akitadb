@@ -7,8 +7,7 @@ public class Tuple {
     private final ByteBuffer buffer;
 
     public Tuple(byte[] data) {
-        // Own a copy — don't hold a reference into the buffer pool's memory
-        this.buffer = ByteBuffer.wrap(data.clone());
+        this.buffer = ByteBuffer.wrap(data);
     }
 
     // -- Relative reads (advance the cursor) --
@@ -58,11 +57,5 @@ public class Tuple {
 
     public int remaining() {
         return buffer.remaining();
-    }
-
-    // -- Raw access --
-
-    public byte[] toBytes() {
-        return buffer.array().clone();
     }
 }
