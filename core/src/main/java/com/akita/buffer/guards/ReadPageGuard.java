@@ -8,7 +8,7 @@ import com.akita.buffer.replacers.Replacer;
 
 import java.nio.ByteBuffer;
 
-public class ReadPageGuard implements AutoCloseable {
+public class ReadPageGuard implements PageGuard {
     private final PageId pageId;
     private final Frame frame;
     private final Replacer replacer;
@@ -28,10 +28,12 @@ public class ReadPageGuard implements AutoCloseable {
         return new ReadPageGuard(pageId, frame, replacer, bufferPoolManager);
     }
 
+    @Override
     public PageId getPageId() {
         return pageId;
     }
 
+    @Override
     public ByteBuffer getData() {
         return frame.getReadOnlyData();
     }

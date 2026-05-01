@@ -6,7 +6,7 @@ import com.akita.buffer.PageId;
 
 import java.nio.ByteBuffer;
 
-public class WritePageGuard implements AutoCloseable{
+public class WritePageGuard implements PageGuard {
     private final PageId pageId;
     private final Frame frame;
     private final BufferPoolManager bufferPoolManager;
@@ -23,10 +23,12 @@ public class WritePageGuard implements AutoCloseable{
         return new WritePageGuard(pageId, frame, bufferPoolManager);
     }
 
+    @Override
     public PageId getPageId() {
         return pageId;
     }
 
+    @Override
     public ByteBuffer getData() {
         return frame.getData();
     }

@@ -4,8 +4,10 @@ import com.akita.buffer.guards.ReadPageGuard;
 import com.akita.buffer.guards.WritePageGuard;
 import com.akita.buffer.replacers.arc.ArcReplacer;
 import com.akita.storage.*;
+import com.akita.testing.AkitaExtension;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -20,36 +22,16 @@ import java.util.concurrent.Executors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+@ExtendWith(AkitaExtension.class)
 class BufferPoolManagerTest {
-    @TempDir(cleanup = CleanupMode.ON_SUCCESS)
-    private static Path tempDir;
-    private static BlockManager blockManager;
-    private static ContainerManager containerManager;
-    private final int FRAMES = 10; // Number of frames
-
-    @BeforeEach
-    void setUp() {
-        FileChannelVFS fileChannelVFS = FileChannelVFS.create(tempDir);
-        blockManager = FileChannelBlockManager.create(fileChannelVFS);
-        containerManager = FileChannelContainerManager.create(fileChannelVFS);
-    }
 
     @Test
-    void veryBasicTest() throws IOException, ExecutionException, InterruptedException {
-        ContainerId containerId = containerManager.createContainer();
-        Map<FrameId, Frame> frames = new HashMap<>();
-        for (int i = 0; i < FRAMES; i++) {
-            FrameId frameId = new FrameId(i);
-            frames.put(frameId, Frame.create(frameId));
-        }
+    void veryBasicTest(
+            BufferPoolManager bpm,
+            FileChannelContainerManager cm
+    ) throws Exception {
 
-        BufferPoolManager bpm = BufferPoolManager.create(
-                FCFSDiskScheduler.create(Executors.newSingleThreadExecutor(), blockManager),
-                ArcReplacer.create(FRAMES),
-                frames,
-                new HashMap<>()
-        );
-
+        ContainerId containerId = cm.createContainer();
         PageId pageId = new PageId(containerId, 0);
         final String expected = "Hello world";
 

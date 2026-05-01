@@ -1,10 +1,11 @@
 # AkitaDB
 
-A database engine built from scratch in Java — a personal learning project focused on understanding database internals from the ground up.
+A database engine built from scratch in Java with the sole aim of understanding database internals from the ground up.
 
 ## About
 
-AkitaDB is a work-in-progress implementation of core database engine components. The goal is not to build a production database, but to deeply understand how databases work internally by actually building one. The name is inspired by the Akita — a dog known for being loyal and persistent, which feels right for a long-term learning project.
+AkitaDB is a work-in-progress implementation of core database engine components. The goal is not to build a production database, but to deeply understand how databases work internally by actually building one. 
+The name is inspired by the Akita, a dog known for being loyal and persistent.
 
 ## What's Been Built
 
@@ -17,9 +18,9 @@ Sits on top of the disk layer and manages an in-memory cache of pages. Rather th
 ## Roadmap
 
 - [x] Disk storage layer
-- [x] Buffer pool manager (in progress)
-- [ ] Heap file / page layout
-- [ ] Tuple representation and slotted pages
+- [x] Buffer pool manager
+- [ ] Heap file / page layout (in progress)
+- [ ] Tuple representation and slotted pages (in progress)
 - [ ] B+ Tree index
 - [ ] Query execution engine
 - [ ] Transaction management & concurrency control
@@ -30,6 +31,7 @@ Sits on top of the disk layer and manages an in-memory cache of pages. Rather th
 - [CMU 15-445/645 — Database Systems](https://15445.courses.cs.cmu.edu/) by Andy Pavlo
 - *Database Systems: The Complete Book* — Garcia-Molina, Ullman, Widom
 - Various database research papers
+- AI has been extremely helpful so far in clarifications of thoughts
 
 ## Testing
 
