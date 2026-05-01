@@ -29,6 +29,7 @@ public class ReadRequest implements Callable<ByteBuffer> {
         synchronized (blockManager) {
             blockManager.readBlock(pageId.containerId(), pageId.blockNumber(), buffer);
         }
+        buffer.clear();
         return buffer;
     }
 }
