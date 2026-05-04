@@ -69,7 +69,8 @@ public class AkitaExtension implements BeforeEachCallback, AfterEachCallback, Pa
         Class<?> type = param.getParameter().getType();
         return type == BufferPoolManager.class
                 || type == FileChannelBlockManager.class
-                || type == FileChannelContainerManager.class;
+                || type == FileChannelContainerManager.class
+                || type == FileChannelVFS.class;
     }
 
     @Override
@@ -79,6 +80,7 @@ public class AkitaExtension implements BeforeEachCallback, AfterEachCallback, Pa
         if (type == BufferPoolManager.class)           return c.bpm();
         if (type == FileChannelBlockManager.class)     return c.blockManager();
         if (type == FileChannelContainerManager.class) return c.containerManager();
+        if (type == FileChannelVFS.class) return c.vfs();
         throw new IllegalArgumentException("Unknown parameter type: " + type);
     }
 
