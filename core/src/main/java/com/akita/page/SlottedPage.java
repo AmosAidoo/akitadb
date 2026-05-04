@@ -1,5 +1,7 @@
 package com.akita.page;
 
+import com.akita.storage.BlockManager;
+
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
@@ -10,10 +12,15 @@ import java.util.List;
  */
 public abstract class SlottedPage {
     protected PageHeader pageHeader;
+
+    public List<Slot> getSlots() {
+        return slots;
+    }
+
     protected List<Slot> slots;
     protected ByteBuffer data;
 
-    protected final void parsePage(ByteBuffer data) {
+    public final void parsePage(ByteBuffer data) {
         this.pageHeader = parseBaseHeader(data);
         parseExtendedHeader(data);
         parseAndSetSlots(data);
@@ -49,7 +56,36 @@ public abstract class SlottedPage {
         return new Tuple(tupleBytes);
     }
 
-    public ByteBuffer toByteBuffer() {
-        return null;
+    /**
+     * Inserts a new tuple
+     * @param tuple The tuple to be inserted
+     */
+    public Slot insertTuple(Tuple tuple) {
+        short lastOffsetBase = slots.isEmpty() ? BlockManager.BLOCK_SIZE : slots.getLast().getOffset();
+        // TODO: Think of the ideal data types here and how the sizes should be restricted.
+        // TODO: Also, how are overflow pages handles(slot size vs actual tuple size)
+        Slot newSlot = Slot.create((short) (lastOffsetBase - tuple.size()), (short) tuple.size());
+        slots.add(newSlot);
+        data.putShort(PageHeader.SIZE, (short) (pageHeader.numberOfSlots + 1));
+        data.put(newSlot.getOffset(), tuple.getBuffer().array());
+        return newSlot;
+    }
+
+    public int getFreeSpace() {
+        int lowestTupleOffset = slots.isEmpty()
+                ? BlockManager.BLOCK_SIZE
+                : slots.getLast().getOffset();
+        int endOfSlotArray = PageHeader.SIZE + (slots.size() * Slot.SERIALIZED_SIZE);
+        return lowestTupleOffset - endOfSlotArray;
+    }
+
+    /**
+     * Replaces the tuple at the given slot with a new one of equal size.
+     */
+    public void updateTuple(Slot slot, Tuple tuple) {
+        if (tuple.size() != slot.getLength()) {
+            throw new IllegalArgumentException("In-place update requires equal-size tuple");
+        }
+        data.put(slot.getOffset(), tuple.getBuffer().array());
     }
 }
