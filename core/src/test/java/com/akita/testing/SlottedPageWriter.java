@@ -29,11 +29,23 @@ public class SlottedPageWriter {
         return this;
     }
 
-    public List<RecordId> writeTo(PageId pageId) throws Exception {
+    public SlottedPageWriter addPageDirectoryTuple(long blockNumber, int freeSpace) {
+        ByteBuffer b = ByteBuffer.allocate(12);
+        b.putLong(blockNumber);
+        b.putInt(freeSpace);
+        tuples.add(b.array());
+        return this;
+    }
+
+    public List<RecordId> writeTo(PageId pageId, ByteBuffer additionalHeaders) throws Exception {
         ByteBuffer page = ByteBuffer.allocate(BlockManager.BLOCK_SIZE);
 
         // Header: number of slots
         page.putShort((short) tuples.size());
+        if (additionalHeaders != null) {
+            additionalHeaders.clear();
+            page.put(additionalHeaders);
+        }
 
         // Compute slot offsets growing from the end of the page
         List<Slot> slots = new ArrayList<>();
