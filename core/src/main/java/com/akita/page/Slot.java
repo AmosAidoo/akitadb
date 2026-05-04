@@ -1,6 +1,7 @@
 package com.akita.page;
 
 public class Slot {
+    public static final int SERIALIZED_SIZE = 4;
     private short offset;
     private short length;
 

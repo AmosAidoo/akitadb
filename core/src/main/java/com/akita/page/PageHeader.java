@@ -3,6 +3,8 @@ package com.akita.page;
 import java.nio.ByteBuffer;
 
 public class PageHeader {
+    public static final int SIZE = Short.BYTES;
+
     short numberOfSlots;
     // PageType pageType;
 

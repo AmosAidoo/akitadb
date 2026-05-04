@@ -1,13 +1,31 @@
 package com.akita.page;
 
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 
 public class Tuple {
     private final ByteBuffer buffer;
 
     public Tuple(byte[] data) {
         this.buffer = ByteBuffer.wrap(data);
+    }
+
+    public Tuple(ByteBuffer buffer) {
+        ByteBuffer duplicate = buffer.duplicate();
+        duplicate.clear();
+        this.buffer = duplicate;
+    }
+
+    public int size() {
+        return buffer.capacity();
+    }
+
+    public int serializedSize() {
+        return buffer.capacity() + Slot.SERIALIZED_SIZE;
+    }
+
+    public ByteBuffer getBuffer() {
+        buffer.clear();
+        return buffer;
     }
 
     // -- Relative reads (advance the cursor) --

@@ -43,6 +43,7 @@ public class WritePageGuard implements PageGuard {
 
     @Override
     public void close() {
+        frame.setIsDirty(true);
         frame.unpin();
         frame.getWriteLatch().unlock();
         bufferPoolManager.onPageUnpinned(pageId);
