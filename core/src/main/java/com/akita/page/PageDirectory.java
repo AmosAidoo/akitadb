@@ -71,6 +71,11 @@ public class PageDirectory extends SlottedPage {
         return null;
     }
 
+    @Override
+    public Tuple getTuple(Slot slot) {
+        return super.getTuple(slot);
+    }
+
     public static Tuple createTuple(long blockNumber, int freeSpace) {
         ByteBuffer buf = ByteBuffer.allocate(Long.BYTES + Integer.BYTES);
         buf.putLong(blockNumber);

@@ -23,6 +23,11 @@ public class HeapPage extends SlottedPage implements AutoCloseable {
     }
 
     @Override
+    public Tuple getTuple(Slot slot) {
+        return super.getTuple(slot);
+    }
+
+    @Override
     public Slot insertTuple(Tuple tuple) {
         if (!(pageGuard instanceof WritePageGuard)) {
             throw new IllegalStateException("pageGuard must be a WritePageGuard");

@@ -1,6 +1,6 @@
 package com.akita.page;
 
-public class Slot {
+public class Slot implements Comparable<Slot> {
     public static final int SERIALIZED_SIZE = 4;
     private short offset;
     private short length;
@@ -20,5 +20,10 @@ public class Slot {
 
     public short getLength() {
         return length;
+    }
+
+    @Override
+    public int compareTo(Slot o) {
+        return Short.compare(offset, o.offset);
     }
 }

@@ -50,7 +50,7 @@ public abstract class SlottedPage {
         // no-op by default; subclasses override to read their extra fields
     }
 
-    public Tuple getTuple(Slot slot) {
+    protected Tuple getTuple(Slot slot) {
         byte[] tupleBytes = new byte[slot.getLength()];
         data.get(slot.getOffset(), tupleBytes);
         return new Tuple(tupleBytes);
