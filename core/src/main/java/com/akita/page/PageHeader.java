@@ -4,6 +4,7 @@ import java.nio.ByteBuffer;
 
 public class PageHeader {
     public static final int SIZE = Short.BYTES;
+    public static final int NUMBER_OF_SLOTS_OFFSET = 0;
 
     short numberOfSlots;
     // PageType pageType;

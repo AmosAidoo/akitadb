@@ -1,0 +1,176 @@
+package com.akita.index.btree;
+
+import com.akita.buffer.BufferPoolManager;
+import com.akita.buffer.PageId;
+import com.akita.catalog.IndexMetadata;
+import com.akita.datatype.AkitaType;
+import com.akita.datatype.AkitaValue;
+import com.akita.datatype.ColumnMetadata;
+import com.akita.datatype.Schema;
+import com.akita.page.RecordId;
+import com.akita.storage.ContainerId;
+import com.akita.storage.FileChannelBlockManager;
+import com.akita.storage.FileChannelContainerManager;
+import com.akita.testing.AkitaExtension;
+import com.akita.testing.SlottedPageWriter;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+
+import java.nio.ByteBuffer;
+import java.util.List;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+@ExtendWith(AkitaExtension.class)
+class BPlusTreeTest {
+
+    @Test
+    void findsKeyInLeafRoot(
+            BufferPoolManager bpm,
+            FileChannelBlockManager bm,
+            FileChannelContainerManager cm
+    ) throws Exception {
+        ContainerId containerId = cm.createContainer();
+        IndexMetadata metadata = intIndexMetadata(containerId);
+        RecordId rid10 = fakeHeapRid(containerId, 10);
+        RecordId rid20 = fakeHeapRid(containerId, 20);
+
+        writeLeaf(bm, metadata, 1,
+                leafKey(10, rid10),
+                leafKey(20, rid20)
+        );
+
+        BPlusTree tree = BPlusTree.create(metadata, bpm);
+
+        assertThat(tree.find(leafKey(20, rid20))).isEqualTo(rid20);
+        assertThat(tree.find(leafKey(30, fakeHeapRid(containerId, 30)))).isNull();
+    }
+
+    @Test
+    void findsKeyThroughInternalRoot(
+            BufferPoolManager bpm,
+            FileChannelBlockManager bm,
+            FileChannelContainerManager cm
+    ) throws Exception {
+        ContainerId containerId = cm.createContainer();
+        IndexMetadata metadata = intIndexMetadata(containerId);
+        RecordId rid5 = fakeHeapRid(containerId, 5);
+        RecordId rid10 = fakeHeapRid(containerId, 10);
+        RecordId rid20 = fakeHeapRid(containerId, 20);
+        RecordId rid30 = fakeHeapRid(containerId, 30);
+
+        writeInternal(bm, metadata, 1, 4,
+                internalKey(10, 2),
+                internalKey(20, 3)
+        );
+        writeLeaf(bm, metadata, 2, leafKey(5, rid5));
+        writeLeaf(bm, metadata, 3, leafKey(10, rid10), leafKey(15, fakeHeapRid(containerId, 15)));
+        writeLeaf(bm, metadata, 4, leafKey(20, rid20), leafKey(30, rid30));
+
+        BPlusTree tree = BPlusTree.create(metadata, bpm);
+
+        assertThat(tree.find(leafKey(5, rid5))).isEqualTo(rid5);
+        assertThat(tree.find(leafKey(10, rid10))).isEqualTo(rid10);
+        assertThat(tree.find(leafKey(20, rid20))).isEqualTo(rid20);
+        assertThat(tree.find(leafKey(30, rid30))).isEqualTo(rid30);
+    }
+
+    @Test
+    void dumpsTreeAsGraphVizDot(
+            BufferPoolManager bpm,
+            FileChannelBlockManager bm,
+            FileChannelContainerManager cm
+    ) throws Exception {
+        ContainerId containerId = cm.createContainer();
+        IndexMetadata metadata = intIndexMetadata(containerId);
+
+        writeInternal(bm, metadata, 1, 4,
+                internalKey(10, 2),
+                internalKey(20, 3)
+        );
+        writeLeaf(bm, metadata, 2, leafKey(5, fakeHeapRid(containerId, 5)));
+        writeLeaf(bm, metadata, 3, leafKey(10, fakeHeapRid(containerId, 10)));
+        writeLeaf(bm, metadata, 4, leafKey(20, fakeHeapRid(containerId, 20)));
+
+        BPlusTree tree = BPlusTree.create(metadata, bpm);
+
+        assertThat(BPlusTreeDotDumper.dump(tree)).isEqualTo("""
+                digraph bplustree {
+                  node [shape=record];
+
+                  page_1 [label="{page=1 | INTERNAL | keys: 10, 20}"];
+                  page_2 [label="{page=2 | LEAF | keys: 5}"];
+                  page_3 [label="{page=3 | LEAF | keys: 10}"];
+                  page_4 [label="{page=4 | LEAF | keys: 20}"];
+
+                  page_1 -> page_2;
+                  page_1 -> page_3;
+                  page_1 -> page_4;
+                }
+                """);
+    }
+
+    private static IndexMetadata intIndexMetadata(ContainerId containerId) {
+        return new IndexMetadata(
+                "idx_test_key",
+                "test",
+                new Schema(List.of(new ColumnMetadata("key", new AkitaType.Integer(), 0, false))),
+                containerId,
+                true
+        );
+    }
+
+    private static void writeLeaf(
+            FileChannelBlockManager bm,
+            IndexMetadata metadata,
+            long blockNumber,
+            LeafBTreeKey... keys
+    ) throws Exception {
+        SlottedPageWriter writer = SlottedPageWriter.create(bm);
+        for (LeafBTreeKey key : keys) {
+            writer.addTuple(TupleSerializer.serializeLeaf(key, metadata));
+        }
+        writer.writeTo(new PageId(metadata.containerId(), blockNumber), leafHeader());
+    }
+
+    private static void writeInternal(
+            FileChannelBlockManager bm,
+            IndexMetadata metadata,
+            long blockNumber,
+            long rightmostChildBlockNumber,
+            InternalEntry... entries
+    ) throws Exception {
+        SlottedPageWriter writer = SlottedPageWriter.create(bm);
+        for (InternalEntry entry : entries) {
+            writer.addTuple(TupleSerializer.serializeInternal(entry.key(), entry.leftChildBlockNumber(), metadata));
+        }
+        writer.writeTo(new PageId(metadata.containerId(), blockNumber), internalHeader(rightmostChildBlockNumber));
+    }
+
+    private static ByteBuffer leafHeader() {
+        ByteBuffer header = ByteBuffer.allocate(Byte.BYTES);
+        header.put((byte) 2);
+        return header;
+    }
+
+    private static ByteBuffer internalHeader(long rightmostChildBlockNumber) {
+        ByteBuffer header = ByteBuffer.allocate(Byte.BYTES + Long.BYTES);
+        header.put((byte) 1);
+        header.putLong(rightmostChildBlockNumber);
+        return header;
+    }
+
+    private static LeafBTreeKey leafKey(int value, RecordId rid) {
+        return new LeafBTreeKey(List.of(new AkitaValue.IntVal(value)), rid);
+    }
+
+    private static InternalEntry internalKey(int value, long leftChildBlockNumber) {
+        return new InternalEntry(new BTreeKey(List.of(new AkitaValue.IntVal(value))), leftChildBlockNumber);
+    }
+
+    private static RecordId fakeHeapRid(ContainerId containerId, int value) {
+        return new RecordId(new PageId(containerId, 100 + value), (short) value);
+    }
+
+    private record InternalEntry(BTreeKey key, long leftChildBlockNumber) {}
+}

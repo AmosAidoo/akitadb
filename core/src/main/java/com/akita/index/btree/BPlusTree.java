@@ -26,6 +26,14 @@ public class BPlusTree {
         return new BPlusTree(indexMetadata, bufferPoolManager);
     }
 
+    IndexMetadata indexMetadata() {
+        return indexMetadata;
+    }
+
+    BufferPoolManager bufferPoolManager() {
+        return bufferPoolManager;
+    }
+
     public RecordId find(LeafBTreeKey fullKey) throws Exception {
         try (BPlusTreePage leaf = findLeafPage(fullKey)) {
             Tuple result = findExactOnLeaf(leaf, fullKey);
@@ -93,10 +101,7 @@ public class BPlusTree {
     // upperBound gives us the first separator strictly greater than the search key,
     // which is the correct child to descend into.
     private PageId findChildPageId(BPlusTreePage page, LeafBTreeKey searchKey) throws Exception {
-        Comparator<Tuple> internalCmp = internalComparator();
-        Tuple searchTuple = TupleSerializer.serializeLeaf(searchKey, indexMetadata);
-
-        int pos = page.upperBound(searchTuple, internalCmp);
+        int pos = upperBoundInternal(page, searchKey);
 
         if (pos == page.tupleCount()) {
             // Beyond all separators — take the rightmost child
@@ -109,6 +114,17 @@ public class BPlusTree {
         Tuple tuple = page.tupleAt(pos);
         long leftChildBlockNumber = tuple.readLong(); // first field of internal tuple
         return new PageId(indexMetadata.containerId(), leftChildBlockNumber);
+    }
+
+    private int upperBoundInternal(BPlusTreePage page, LeafBTreeKey searchKey) {
+        int l = 0, r = page.tupleCount();
+        while (l < r) {
+            int mid = l + (r - l) / 2;
+            BTreeKey midKey = BTreeKey.ofInternal(page.tupleAt(mid), indexMetadata);
+            if (midKey.compareColumnsTo(searchKey) <= 0) l = mid + 1;
+            else r = mid;
+        }
+        return l;
     }
 
     private Tuple findExactOnLeaf(BPlusTreePage leaf, LeafBTreeKey fullKey) {

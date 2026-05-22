@@ -3,6 +3,7 @@ package com.akita.testing;
 import com.akita.buffer.PageId;
 import com.akita.page.RecordId;
 import com.akita.page.Slot;
+import com.akita.page.Tuple;
 import com.akita.storage.BlockManager;
 import com.akita.storage.FileChannelBlockManager;
 
@@ -29,6 +30,11 @@ public class SlottedPageWriter {
         return this;
     }
 
+    public SlottedPageWriter addTuple(Tuple tuple) {
+        tuples.add(tuple.getBuffer().array());
+        return this;
+    }
+
     public SlottedPageWriter addPageDirectoryTuple(long blockNumber, int freeSpace) {
         ByteBuffer b = ByteBuffer.allocate(12);
         b.putLong(blockNumber);
@@ -38,7 +44,16 @@ public class SlottedPageWriter {
     }
 
     public List<RecordId> writeTo(PageId pageId, ByteBuffer additionalHeaders) throws Exception {
+        return writeTo(pageId, null, additionalHeaders);
+    }
+
+    public List<RecordId> writeTo(PageId pageId, ByteBuffer prefixHeaders, ByteBuffer additionalHeaders) throws Exception {
         ByteBuffer page = ByteBuffer.allocate(BlockManager.BLOCK_SIZE);
+
+        if (prefixHeaders != null) {
+            prefixHeaders.clear();
+            page.put(prefixHeaders);
+        }
 
         // Header: number of slots
         page.putShort((short) tuples.size());
@@ -71,7 +86,7 @@ public class SlottedPageWriter {
         // Return RecordIds in insertion order
         List<RecordId> records = new ArrayList<>();
         for (Slot slot : slots) {
-            records.add(new RecordId(pageId, slot));
+            records.add(new RecordId(pageId, slot.getOffset()));
         }
         return records;
     }

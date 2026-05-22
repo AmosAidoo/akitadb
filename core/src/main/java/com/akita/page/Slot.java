@@ -22,6 +22,15 @@ public class Slot implements Comparable<Slot> {
         return length;
     }
 
+    public byte[] getBytes() {
+        byte[] bytes = new byte[SERIALIZED_SIZE];
+        bytes[0] = (byte) ((offset >> 8) & 0xff);
+        bytes[1] = (byte) ((offset) & 0xff);
+        bytes[2] = (byte) ((length >> 8) & 0xff);
+        bytes[3] = (byte) (length & 0xff);
+        return bytes;
+    }
+
     @Override
     public int compareTo(Slot o) {
         return Short.compare(offset, o.offset);

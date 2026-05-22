@@ -52,7 +52,7 @@ public class BPlusTreePage extends SlottedPage implements AutoCloseable {
         if (slotIndex < 0 || slotIndex >= slots.size()) {
             return null;
         }
-        return super.getTuple(slots.get(slotIndex));
+        return super.getTupleBySlotIndex(slotIndex);
     }
 
     public int tupleCount() {

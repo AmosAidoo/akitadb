@@ -3,6 +3,7 @@ package com.akita.page;
 import com.akita.buffer.BufferPoolManager;
 import com.akita.buffer.PageId;
 import com.akita.buffer.guards.ReadPageGuard;
+import com.akita.heap.HeapFileHeader;
 import com.akita.storage.ContainerId;
 
 import java.nio.ByteBuffer;
@@ -14,7 +15,7 @@ import java.util.concurrent.ExecutionException;
  * Each element: blockNumber, freeSpace,
  */
 public class PageDirectory extends SlottedPage {
-    public final static long FIRST_PAGE_DIRECTORY_NUMBER = 1;
+    public final static long FIRST_PAGE_DIRECTORY_NUMBER = 0;
 
     private final ContainerId containerId;
 
@@ -36,14 +37,26 @@ public class PageDirectory extends SlottedPage {
         this.nextBlockPointer = data.getShort();
     }
 
+    public void parseFirstPage(ByteBuffer data) {
+        data.position(HeapFileHeader.SIZE);
+        parsePage(data);
+    }
+
     // TODO: Lazy load page directory
     public static PageDirectory load(
             ContainerId containerId,
             BufferPoolManager bufferPoolManager
     ) throws ExecutionException, InterruptedException {
-        PageDirectory dummy = new PageDirectory(containerId);
-        PageDirectory current = dummy;
-        long nextBlockPointer = FIRST_PAGE_DIRECTORY_NUMBER;
+        PageDirectory first;
+        try (ReadPageGuard pageGuard = bufferPoolManager.readPage(
+                new PageId(containerId, FIRST_PAGE_DIRECTORY_NUMBER)
+        )) {
+            first = new PageDirectory(containerId);
+            first.parseFirstPage(pageGuard.getData());
+        }
+
+        PageDirectory current = first;
+        long nextBlockPointer = first.nextBlockPointer;
         while (nextBlockPointer != 0) {
             PageId pageId = new PageId(containerId, nextBlockPointer);
             try (ReadPageGuard pageGuard = bufferPoolManager.readPage(pageId)) {
@@ -55,13 +68,13 @@ public class PageDirectory extends SlottedPage {
                 nextBlockPointer = pageDirectory.nextBlockPointer;
             }
         }
-        return dummy.next;
+        return first;
     }
 
     public PageId findPageWithTargetSpace(int targetSpace) {
         // The tuples in a page directory are of the format (blockNumber, freeSpace)
         for (Slot slot : slots) {
-            Tuple tuple = getTuple(slot);
+            Tuple tuple = getTuple(slot.getOffset());
             long blockNumber = tuple.readLong();
             int freeSpace = tuple.readInt();
             if (freeSpace >= targetSpace) {
@@ -72,8 +85,8 @@ public class PageDirectory extends SlottedPage {
     }
 
     @Override
-    public Tuple getTuple(Slot slot) {
-        return super.getTuple(slot);
+    public Tuple getTuple(short offset) {
+        return super.getTuple(offset);
     }
 
     public static Tuple createTuple(long blockNumber, int freeSpace) {
@@ -86,7 +99,7 @@ public class PageDirectory extends SlottedPage {
 
     public long getFreeSpaceForPage(PageId pageId) {
         for (Slot slot : slots) {
-            Tuple entry = getTuple(slot);
+            Tuple entry = getTuple(slot.getOffset());
             long blockNumber = entry.readLong();
             int freeSpace = entry.readInt();
             if (blockNumber == pageId.blockNumber()) {

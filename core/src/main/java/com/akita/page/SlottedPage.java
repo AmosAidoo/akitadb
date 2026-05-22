@@ -50,7 +50,21 @@ public abstract class SlottedPage {
         // no-op by default; subclasses override to read their extra fields
     }
 
-    protected Tuple getTuple(Slot slot) {
+    protected Tuple getTuple(short slotOffset) {
+        Slot slot = slots.stream().filter(s -> s.getOffset() == slotOffset).findFirst().orElse(null);
+        if (slot == null) {
+            throw new IllegalArgumentException(slotOffset + " is not a valid slot");
+        }
+        byte[] tupleBytes = new byte[slot.getLength()];
+        data.get(slot.getOffset(), tupleBytes);
+        return new Tuple(tupleBytes);
+    }
+
+    protected Tuple getTupleBySlotIndex(int slotIndex) {
+        Slot slot = slots.get(slotIndex);
+        if (slot == null) {
+            throw new IllegalArgumentException(slotIndex + " is not a valid slot index");
+        }
         byte[] tupleBytes = new byte[slot.getLength()];
         data.get(slot.getOffset(), tupleBytes);
         return new Tuple(tupleBytes);
@@ -66,7 +80,8 @@ public abstract class SlottedPage {
         // TODO: Also, how are overflow pages handles(slot size vs actual tuple size)
         Slot newSlot = Slot.create((short) (lastOffsetBase - tuple.size()), (short) tuple.size());
         slots.add(newSlot);
-        data.putShort(PageHeader.SIZE, (short) (pageHeader.numberOfSlots + 1));
+        data.putShort(PageHeader.NUMBER_OF_SLOTS_OFFSET, (short) (pageHeader.numberOfSlots + 1));
+        data.put(PageHeader.SIZE + (slots.size() - 1) * Slot.SERIALIZED_SIZE, newSlot.getBytes());
         data.put(newSlot.getOffset(), tuple.getBuffer().array());
         return newSlot;
     }

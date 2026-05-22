@@ -23,8 +23,8 @@ public class HeapPage extends SlottedPage implements AutoCloseable {
     }
 
     @Override
-    public Tuple getTuple(Slot slot) {
-        return super.getTuple(slot);
+    public Tuple getTuple(short offset) {
+        return super.getTuple(offset);
     }
 
     @Override
