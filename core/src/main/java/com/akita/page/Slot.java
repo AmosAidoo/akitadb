@@ -2,16 +2,22 @@ package com.akita.page;
 
 public class Slot implements Comparable<Slot> {
     public static final int SERIALIZED_SIZE = 4;
+    private final short index;
     private short offset;
     private short length;
 
-    private Slot(short offset, short length) {
+    private Slot(short index, short offset, short length) {
+        this.index = index;
         this.offset = offset;
         this.length = length;
     }
 
-    public static Slot create(short offset, short length) {
-        return new Slot(offset, length);
+    public static Slot create(short index, short offset, short length) {
+        return new Slot(index, offset, length);
+    }
+
+    public short getIndex() {
+        return index;
     }
 
     public short getOffset() {

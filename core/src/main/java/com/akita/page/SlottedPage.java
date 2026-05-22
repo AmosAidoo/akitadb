@@ -33,10 +33,10 @@ public abstract class SlottedPage {
 
     private void parseAndSetSlots(ByteBuffer data) {
         List<Slot> slots = new ArrayList<>();
-        for (short i = 0; i < this.pageHeader.numberOfSlots; i++) {
+        for (short i = 0; i < this.pageHeader.getNumberOfSlots(); i++) {
             short offset = data.getShort();
             short length = data.getShort();
-            slots.add(Slot.create(offset, length));
+            slots.add(Slot.create(i, offset, length));
         }
         this.slots = slots;
     }
@@ -44,6 +44,14 @@ public abstract class SlottedPage {
     private void setData(ByteBuffer data) {
         data.clear();
         this.data = data;
+    }
+
+    protected int headerSize() {
+        return PageHeader.SIZE;
+    }
+
+    protected int slotDirectoryOffset(int slotIndex) {
+        return headerSize() + (slotIndex * Slot.SERIALIZED_SIZE);
     }
 
     protected void parseExtendedHeader(ByteBuffer data) {
@@ -60,6 +68,29 @@ public abstract class SlottedPage {
         return new Tuple(tupleBytes);
     }
 
+    protected Tuple getTuple(Slot slot) {
+        byte[] tupleBytes = new byte[slot.getLength()];
+        data.get(slot.getOffset(), tupleBytes);
+        return new Tuple(tupleBytes);
+    }
+
+    protected int lowestTupleOffset() {
+        return slots.stream()
+                .mapToInt(Slot::getOffset)
+                .min()
+                .orElse(BlockManager.BLOCK_SIZE);
+    }
+
+    protected Slot insertTupleRaw(Tuple tuple) {
+        int lastOffsetBase = lowestTupleOffset();
+        Slot newSlot = Slot.create((short) slots.size(), (short) (lastOffsetBase - tuple.size()), (short) tuple.size());
+        slots.add(newSlot);
+        data.putShort(PageHeader.NUMBER_OF_SLOTS_OFFSET, (short) (pageHeader.getNumberOfSlots() + 1));
+        data.put(slotDirectoryOffset(slots.size() - 1), newSlot.getBytes());
+        data.put(newSlot.getOffset(), tuple.getBuffer().array());
+        return newSlot;
+    }
+
     protected Tuple getTupleBySlotIndex(int slotIndex) {
         Slot slot = slots.get(slotIndex);
         if (slot == null) {
@@ -70,28 +101,9 @@ public abstract class SlottedPage {
         return new Tuple(tupleBytes);
     }
 
-    /**
-     * Inserts a new tuple
-     * @param tuple The tuple to be inserted
-     */
-    public Slot insertTuple(Tuple tuple) {
-        short lastOffsetBase = slots.isEmpty() ? BlockManager.BLOCK_SIZE : slots.getLast().getOffset();
-        // TODO: Think of the ideal data types here and how the sizes should be restricted.
-        // TODO: Also, how are overflow pages handles(slot size vs actual tuple size)
-        Slot newSlot = Slot.create((short) (lastOffsetBase - tuple.size()), (short) tuple.size());
-        slots.add(newSlot);
-        data.putShort(PageHeader.NUMBER_OF_SLOTS_OFFSET, (short) (pageHeader.numberOfSlots + 1));
-        data.put(PageHeader.SIZE + (slots.size() - 1) * Slot.SERIALIZED_SIZE, newSlot.getBytes());
-        data.put(newSlot.getOffset(), tuple.getBuffer().array());
-        return newSlot;
-    }
-
     public int getFreeSpace() {
-        int lowestTupleOffset = slots.isEmpty()
-                ? BlockManager.BLOCK_SIZE
-                : slots.getLast().getOffset();
-        int endOfSlotArray = PageHeader.SIZE + (slots.size() * Slot.SERIALIZED_SIZE);
-        return lowestTupleOffset - endOfSlotArray;
+        int endOfSlotArray = headerSize() + (slots.size() * Slot.SERIALIZED_SIZE);
+        return lowestTupleOffset() - endOfSlotArray;
     }
 
     /**

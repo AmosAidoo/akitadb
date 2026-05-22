@@ -7,7 +7,10 @@ import com.akita.datatype.AkitaType;
 import com.akita.datatype.AkitaValue;
 import com.akita.datatype.ColumnMetadata;
 import com.akita.datatype.Schema;
+import com.akita.heap.HeapFileHeader;
+import com.akita.heap.ObjectType;
 import com.akita.page.RecordId;
+import com.akita.storage.BlockManager;
 import com.akita.storage.ContainerId;
 import com.akita.storage.FileChannelBlockManager;
 import com.akita.storage.FileChannelContainerManager;
@@ -30,7 +33,7 @@ class BPlusTreeTest {
             FileChannelBlockManager bm,
             FileChannelContainerManager cm
     ) throws Exception {
-        ContainerId containerId = cm.createContainer();
+        ContainerId containerId = createIndexContainer(bm, cm);
         IndexMetadata metadata = intIndexMetadata(containerId);
         RecordId rid10 = fakeHeapRid(containerId, 10);
         RecordId rid20 = fakeHeapRid(containerId, 20);
@@ -52,7 +55,7 @@ class BPlusTreeTest {
             FileChannelBlockManager bm,
             FileChannelContainerManager cm
     ) throws Exception {
-        ContainerId containerId = cm.createContainer();
+        ContainerId containerId = createIndexContainer(bm, cm);
         IndexMetadata metadata = intIndexMetadata(containerId);
         RecordId rid5 = fakeHeapRid(containerId, 5);
         RecordId rid10 = fakeHeapRid(containerId, 10);
@@ -81,7 +84,7 @@ class BPlusTreeTest {
             FileChannelBlockManager bm,
             FileChannelContainerManager cm
     ) throws Exception {
-        ContainerId containerId = cm.createContainer();
+        ContainerId containerId = createIndexContainer(bm, cm);
         IndexMetadata metadata = intIndexMetadata(containerId);
 
         writeInternal(bm, metadata, 1, 4,
@@ -108,6 +111,39 @@ class BPlusTreeTest {
                   page_1 -> page_4;
                 }
                 """);
+    }
+
+    @Test
+    void insertsIntoNonFullLeafRoot(
+            BufferPoolManager bpm,
+            FileChannelBlockManager bm,
+            FileChannelContainerManager cm
+    ) throws Exception {
+        ContainerId containerId = createIndexContainer(bm, cm);
+        IndexMetadata metadata = intIndexMetadata(containerId);
+        RecordId rid10 = fakeHeapRid(containerId, 10);
+        RecordId rid20 = fakeHeapRid(containerId, 20);
+
+        writeLeaf(bm, metadata, 1, leafKey(10, rid10));
+
+        BPlusTree tree = BPlusTree.create(metadata, bpm);
+        tree.insert(leafKey(20, rid20));
+
+        assertThat(tree.find(leafKey(20, rid20))).isEqualTo(rid20);
+        assertThat(BPlusTreeDotDumper.dump(tree)).contains("page_1 [label=\"{page=1 | LEAF | keys: 10, 20}\"]");
+    }
+
+    private static ContainerId createIndexContainer(
+            FileChannelBlockManager bm,
+            FileChannelContainerManager cm
+    ) throws Exception {
+        ContainerId containerId = cm.createContainer();
+        ByteBuffer firstPage = ByteBuffer.allocate(BlockManager.BLOCK_SIZE);
+        HeapFileHeader.write(firstPage, ObjectType.INDEX);
+        firstPage.putShort((short) 0); // page-directory slots
+        firstPage.putShort((short) 0); // no next page directory
+        bm.writeBlock(containerId, 0, firstPage);
+        return containerId;
     }
 
     private static IndexMetadata intIndexMetadata(ContainerId containerId) {

@@ -65,9 +65,10 @@ public class SlottedPageWriter {
         // Compute slot offsets growing from the end of the page
         List<Slot> slots = new ArrayList<>();
         int tail = BlockManager.BLOCK_SIZE;
-        for (byte[] tuple : tuples) {
+        for (short i = 0; i < tuples.size(); i++) {
+            byte[] tuple = tuples.get(i);
             tail -= tuple.length;
-            slots.add(Slot.create((short) tail, (short) tuple.length));
+            slots.add(Slot.create(i, (short) tail, (short) tuple.length));
         }
 
         // Write slot directory (offset, length pairs) after the header

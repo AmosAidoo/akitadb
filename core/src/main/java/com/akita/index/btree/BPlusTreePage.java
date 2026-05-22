@@ -1,10 +1,11 @@
 package com.akita.index.btree;
 
 import com.akita.buffer.guards.PageGuard;
+import com.akita.buffer.guards.WritePageGuard;
 import com.akita.catalog.IndexMetadata;
+import com.akita.page.Slot;
 import com.akita.page.SlottedPage;
 import com.akita.page.Tuple;
-
 import java.nio.ByteBuffer;
 import java.util.Comparator;
 
@@ -24,6 +25,24 @@ public class BPlusTreePage extends SlottedPage implements AutoCloseable {
         BPlusTreePage page = new BPlusTreePage(pageGuard, indexMetadata);
         page.parsePage(pageGuard.getData());
         return page;
+    }
+
+    public Slot insertTupleSorted(Tuple tuple, Comparator<Tuple> comparator) {
+        if (!(pageGuard instanceof WritePageGuard)) {
+            throw new IllegalStateException("pageGuard must be a WritePageGuard");
+        }
+        Slot newSlot = super.insertTupleRaw(tuple);
+        slots.sort((s1, s2) -> {
+            Tuple t1 = getTuple(s1);
+            Tuple t2 = getTuple(s2);
+            return comparator.compare(t1, t2);
+        });
+        // Serialize sorted slots
+        for (int i = 0; i < slots.size(); i++) {
+            Slot slot = slots.get(i);
+            data.put(slotDirectoryOffset(i), slot.getBytes());
+        }
+        return newSlot;
     }
 
     public int lowerBound(Tuple searchTuple, Comparator<Tuple> cmp) {
@@ -72,6 +91,23 @@ public class BPlusTreePage extends SlottedPage implements AutoCloseable {
             throw new IllegalStateException("Only internal pages have a rightmost child pointer");
         }
         return rightmostChildBlockNumber;
+    }
+
+    public int getRemainingSpace() {
+        return lowestTupleOffset() - (headerSize() + (Slot.SERIALIZED_SIZE * slots.size()));
+    }
+
+    @Override
+    protected int headerSize() {
+        return super.headerSize() + extendedHeaderSize();
+    }
+
+    private int extendedHeaderSize() {
+        int extendedHeaderSize = Byte.BYTES;
+        if (pageType == BTreePageType.INTERNAL) {
+            extendedHeaderSize += Long.BYTES;
+        }
+        return extendedHeaderSize;
     }
 
     // Extended header layout: | pageType (byte) | rightmostChildBlockNumber (long, internal only) |

@@ -3,12 +3,15 @@ package com.akita.index.btree;
 import com.akita.buffer.BufferPoolManager;
 import com.akita.buffer.PageId;
 import com.akita.catalog.IndexMetadata;
+import com.akita.page.PageDirectory;
 import com.akita.page.RecordId;
 import com.akita.page.Tuple;
+import com.akita.storage.ContainerId;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.ExecutionException;
 
 public class BPlusTree {
     private static final long ROOT_BLOCK_NUMBER = 1;
@@ -16,14 +19,21 @@ public class BPlusTree {
 
     private final IndexMetadata indexMetadata;
     private final BufferPoolManager bufferPoolManager;
+    final PageDirectory pageDirectory;
 
-    private BPlusTree(IndexMetadata indexMetadata, BufferPoolManager bufferPoolManager) {
+    private BPlusTree(IndexMetadata indexMetadata, BufferPoolManager bufferPoolManager, PageDirectory pageDirectory) {
         this.indexMetadata = indexMetadata;
         this.bufferPoolManager = bufferPoolManager;
+        this.pageDirectory = pageDirectory;
     }
 
-    public static BPlusTree create(IndexMetadata indexMetadata, BufferPoolManager bufferPoolManager) {
-        return new BPlusTree(indexMetadata, bufferPoolManager);
+    public static BPlusTree create(IndexMetadata indexMetadata, BufferPoolManager bufferPoolManager) throws ExecutionException, InterruptedException {
+        ContainerId containerId = indexMetadata.containerId();
+        PageDirectory pageDirectory = PageDirectory.load(
+                containerId,
+                bufferPoolManager
+        );
+        return new BPlusTree(indexMetadata, bufferPoolManager, pageDirectory);
     }
 
     IndexMetadata indexMetadata() {
@@ -32,6 +42,33 @@ public class BPlusTree {
 
     BufferPoolManager bufferPoolManager() {
         return bufferPoolManager;
+    }
+
+    public void insert(LeafBTreeKey fullKey) throws Exception {
+        int size = TupleSerializer.computeLeafSize(fullKey, indexMetadata);
+        if (size > MAX_KEY_BYTES) {
+            throw new IllegalArgumentException(
+                    "Index key size " + size + " bytes exceeds maximum of " + MAX_KEY_BYTES + " bytes"
+            );
+        }
+        try (BPlusTreePage leaf = findLeafPageForWrite(fullKey)) {
+            if (size <= leaf.getRemainingSpace()) {
+                leaf.insertTupleSorted(
+                        TupleSerializer.serializeLeaf(fullKey, indexMetadata),
+                        leafComparator()
+                );
+            } else {
+
+            }
+        }
+    }
+
+    private BPlusTreePage findLeafPageForWrite(LeafBTreeKey searchKey) throws Exception {
+        PageId leafPageId = findLeafPageId(searchKey);
+        return BPlusTreePage.create(
+                bufferPoolManager.writePage(leafPageId),
+                indexMetadata
+        );
     }
 
     public RecordId find(LeafBTreeKey fullKey) throws Exception {
@@ -71,6 +108,14 @@ public class BPlusTree {
     }
 
     private BPlusTreePage findLeafPage(LeafBTreeKey searchKey) throws Exception {
+        PageId leafPageId = findLeafPageId(searchKey);
+        return BPlusTreePage.create(
+                bufferPoolManager.readPage(leafPageId),
+                indexMetadata
+        );
+    }
+
+    private PageId findLeafPageId(LeafBTreeKey searchKey) throws Exception {
         PageId currentPageId = new PageId(
                 indexMetadata.containerId(),
                 ROOT_BLOCK_NUMBER
@@ -83,7 +128,11 @@ public class BPlusTree {
             );
 
             if (page.isLeaf()) {
-                return page; // caller is responsible for closing
+                try {
+                    return currentPageId;
+                } finally {
+                    page.close();
+                }
             }
 
             PageId childPageId;
@@ -153,14 +202,5 @@ public class BPlusTree {
             LeafBTreeKey k2 = LeafBTreeKey.ofLeaf(t2, indexMetadata);
             return k1.compareTo(k2);
         };
-    }
-
-    private void validateKeySize(LeafBTreeKey key) {
-        int size = TupleSerializer.computeLeafSize(key, indexMetadata);
-        if (size > MAX_KEY_BYTES) {
-            throw new IllegalArgumentException(
-                    "Index key size " + size + " bytes exceeds maximum of " + MAX_KEY_BYTES + " bytes"
-            );
-        }
     }
 }
