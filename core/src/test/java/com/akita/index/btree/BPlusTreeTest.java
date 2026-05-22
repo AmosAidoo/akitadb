@@ -2,6 +2,8 @@ package com.akita.index.btree;
 
 import com.akita.buffer.BufferPoolManager;
 import com.akita.buffer.PageId;
+import com.akita.buffer.guards.ReadPageGuard;
+import com.akita.buffer.guards.WritePageGuard;
 import com.akita.catalog.IndexMetadata;
 import com.akita.datatype.AkitaType;
 import com.akita.datatype.AkitaValue;
@@ -131,6 +133,54 @@ class BPlusTreeTest {
 
         assertThat(tree.find(leafKey(20, rid20))).isEqualTo(rid20);
         assertThat(BPlusTreeDotDumper.dump(tree)).contains("page_1 [label=\"{page=1 | LEAF | keys: 10, 20}\"]");
+    }
+
+    @Test
+    void initializesAllocatedLeafPage(
+            BufferPoolManager bpm,
+            FileChannelBlockManager bm,
+            FileChannelContainerManager cm
+    ) throws Exception {
+        ContainerId containerId = createIndexContainer(bm, cm);
+        IndexMetadata metadata = intIndexMetadata(containerId);
+        PageId pageId = new PageId(containerId, 5);
+
+        WritePageGuard writeGuard = bpm.allocatePage(pageId);
+        try (BPlusTreePage page = BPlusTreePage.initializeLeaf(writeGuard, metadata)) {
+            assertThat(page.isLeaf()).isTrue();
+            assertThat(page.tupleCount()).isZero();
+        }
+
+        ReadPageGuard readGuard = bpm.readPage(pageId);
+        try (BPlusTreePage page = BPlusTreePage.create(readGuard, metadata)) {
+            assertThat(page.isLeaf()).isTrue();
+            assertThat(page.tupleCount()).isZero();
+        }
+    }
+
+    @Test
+    void initializesAllocatedInternalPage(
+            BufferPoolManager bpm,
+            FileChannelBlockManager bm,
+            FileChannelContainerManager cm
+    ) throws Exception {
+        ContainerId containerId = createIndexContainer(bm, cm);
+        IndexMetadata metadata = intIndexMetadata(containerId);
+        PageId pageId = new PageId(containerId, 5);
+
+        WritePageGuard writeGuard = bpm.allocatePage(pageId);
+        try (BPlusTreePage page = BPlusTreePage.initializeInternal(writeGuard, metadata, 42)) {
+            assertThat(page.isInternal()).isTrue();
+            assertThat(page.getRightmostChildBlockNumber()).isEqualTo(42);
+            assertThat(page.tupleCount()).isZero();
+        }
+
+        ReadPageGuard readGuard = bpm.readPage(pageId);
+        try (BPlusTreePage page = BPlusTreePage.create(readGuard, metadata)) {
+            assertThat(page.isInternal()).isTrue();
+            assertThat(page.getRightmostChildBlockNumber()).isEqualTo(42);
+            assertThat(page.tupleCount()).isZero();
+        }
     }
 
     private static ContainerId createIndexContainer(

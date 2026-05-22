@@ -3,6 +3,7 @@ package com.akita.index.btree;
 import com.akita.buffer.guards.PageGuard;
 import com.akita.buffer.guards.WritePageGuard;
 import com.akita.catalog.IndexMetadata;
+import com.akita.page.PageHeader;
 import com.akita.page.Slot;
 import com.akita.page.SlottedPage;
 import com.akita.page.Tuple;
@@ -25,6 +26,42 @@ public class BPlusTreePage extends SlottedPage implements AutoCloseable {
         BPlusTreePage page = new BPlusTreePage(pageGuard, indexMetadata);
         page.parsePage(pageGuard.getData());
         return page;
+    }
+
+    public static BPlusTreePage initializeLeaf(WritePageGuard pageGuard, IndexMetadata indexMetadata) {
+        initializeHeader(pageGuard.getData(), BTreePageType.LEAF, 0);
+        return create(pageGuard, indexMetadata);
+    }
+
+    public static BPlusTreePage initializeInternal(
+            WritePageGuard pageGuard,
+            IndexMetadata indexMetadata,
+            long rightmostChildBlockNumber
+    ) {
+        initializeHeader(pageGuard.getData(), BTreePageType.INTERNAL, rightmostChildBlockNumber);
+        return create(pageGuard, indexMetadata);
+    }
+
+    private static void initializeHeader(
+            ByteBuffer data,
+            BTreePageType pageType,
+            long rightmostChildBlockNumber
+    ) {
+        data.clear();
+        data.putShort(PageHeader.NUMBER_OF_SLOTS_OFFSET, (short) 0);
+        data.position(PageHeader.SIZE);
+        data.put(pageTypeCode(pageType));
+        if (pageType == BTreePageType.INTERNAL) {
+            data.putLong(rightmostChildBlockNumber);
+        }
+    }
+
+    private static byte pageTypeCode(BTreePageType pageType) {
+        return switch (pageType) {
+            case INTERNAL -> 1;
+            case LEAF -> 2;
+            case INVALID -> 0;
+        };
     }
 
     public Slot insertTupleSorted(Tuple tuple, Comparator<Tuple> comparator) {

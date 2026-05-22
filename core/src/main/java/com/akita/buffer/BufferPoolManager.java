@@ -3,6 +3,7 @@ package com.akita.buffer;
 import com.akita.buffer.guards.ReadPageGuard;
 import com.akita.buffer.guards.WritePageGuard;
 import com.akita.buffer.replacers.Replacer;
+import com.akita.storage.BlockManager;
 
 import java.nio.ByteBuffer;
 import java.util.LinkedList;
@@ -39,6 +40,14 @@ public class BufferPoolManager {
 
     public static BufferPoolManager create(DiskScheduler diskScheduler, Replacer replacer, Map<FrameId, Frame> frames, Map<PageId, Frame> pageTable) {
         return new BufferPoolManager(diskScheduler, replacer, frames, pageTable);
+    }
+
+    private void loadPageIntoFrame(Frame frame, PageId pageId, ByteBuffer data) {
+        frame.getData().put(data);
+        frame.setPageId(pageId);
+        frame.setIsDirty(false);
+        pageTable.put(pageId, frame);
+        replacer.recordAccess(frame.getFrameId(), pageId);
     }
 
     // Extracted helper: finds a free frameId or waits until one becomes available.
@@ -93,9 +102,7 @@ public class BufferPoolManager {
         latch.lock();
         try {
             Frame frame = frames.get(frameId);
-            frame.getData().put(data);
-            pageTable.put(pageId, frame);
-            replacer.recordAccess(frameId, pageId);
+            loadPageIntoFrame(frame, pageId, data);
             return ReadPageGuard.create(pageId, frame, replacer, this);
         } finally {
             latch.unlock();
@@ -128,10 +135,39 @@ public class BufferPoolManager {
         latch.lock();
         try {
             Frame frame = frames.get(frameId);
-            // FIX: same data load fix as readPage
-            frame.getData().put(data);
-            pageTable.put(pageId, frame);
-            replacer.recordAccess(frameId, pageId);
+            loadPageIntoFrame(frame, pageId, data);
+            return WritePageGuard.create(pageId, frame, this);
+        } finally {
+            latch.unlock();
+        }
+    }
+
+    public WritePageGuard allocatePage(PageId pageId) throws InterruptedException, ExecutionException {
+        latch.lock();
+        try {
+            if (pageTable.containsKey(pageId)) {
+                throw new IllegalStateException("Page already exists in buffer pool: " + pageId);
+            }
+        } finally {
+            latch.unlock();
+        }
+
+        latch.lock();
+        FrameId frameId;
+        try {
+            frameId = acquireFrameId();
+        } finally {
+            latch.unlock();
+        }
+
+        diskScheduler.schedulePageAllocate(pageId).get();
+
+        ByteBuffer data = ByteBuffer.allocate(BlockManager.BLOCK_SIZE);
+
+        latch.lock();
+        try {
+            Frame frame = frames.get(frameId);
+            loadPageIntoFrame(frame, pageId, data);
             return WritePageGuard.create(pageId, frame, this);
         } finally {
             latch.unlock();

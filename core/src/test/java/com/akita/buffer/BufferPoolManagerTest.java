@@ -60,4 +60,23 @@ class BufferPoolManagerTest {
 
         assertThat(bpm.deletePage(pageId)).isTrue();
     }
+
+    @Test
+    void allocatePageReturnsZeroedWritablePage(
+            BufferPoolManager bpm,
+            FileChannelContainerManager cm
+    ) throws Exception {
+        ContainerId containerId = cm.createContainer();
+        PageId pageId = new PageId(containerId, 3);
+
+        try (WritePageGuard guard = bpm.allocatePage(pageId)) {
+            assertThat(guard.getPageId()).isEqualTo(pageId);
+            assertThat(guard.getData().getInt()).isZero();
+            guard.getData().putInt(1234);
+        }
+
+        try (ReadPageGuard guard = bpm.readPage(pageId)) {
+            assertThat(guard.getData().getInt()).isEqualTo(1234);
+        }
+    }
 }

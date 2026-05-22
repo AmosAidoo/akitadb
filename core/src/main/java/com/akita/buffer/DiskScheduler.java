@@ -8,4 +8,6 @@ public interface DiskScheduler {
     Future<ByteBuffer> schedulePageRead(PageId pageId);
 
     Future<?> schedulePageWrite(PageId pageId, ByteBuffer buffer);
+
+    Future<?> schedulePageAllocate(PageId pageId);
 }
