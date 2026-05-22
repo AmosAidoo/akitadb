@@ -12,6 +12,7 @@ import com.akita.datatype.Schema;
 import com.akita.heap.HeapFileHeader;
 import com.akita.heap.ObjectType;
 import com.akita.page.RecordId;
+import com.akita.page.Tuple;
 import com.akita.storage.BlockManager;
 import com.akita.storage.ContainerId;
 import com.akita.storage.FileChannelBlockManager;
@@ -181,6 +182,40 @@ class BPlusTreeTest {
             assertThat(page.getRightmostChildBlockNumber()).isEqualTo(42);
             assertThat(page.tupleCount()).isZero();
         }
+    }
+
+    @Test
+    void rewritesLeafTuples(
+            BufferPoolManager bpm,
+            FileChannelBlockManager bm,
+            FileChannelContainerManager cm
+    ) throws Exception {
+        ContainerId containerId = createIndexContainer(bm, cm);
+        IndexMetadata metadata = intIndexMetadata(containerId);
+        RecordId rid10 = fakeHeapRid(containerId, 10);
+        RecordId rid20 = fakeHeapRid(containerId, 20);
+        RecordId rid30 = fakeHeapRid(containerId, 30);
+        PageId pageId = new PageId(containerId, 1);
+
+        writeLeaf(bm, metadata, 1,
+                leafKey(10, rid10),
+                leafKey(20, rid20),
+                leafKey(30, rid30)
+        );
+
+        WritePageGuard writeGuard = bpm.writePage(pageId);
+        try (BPlusTreePage page = BPlusTreePage.create(writeGuard, metadata)) {
+            List<Tuple> tuples = page.tuples();
+            page.replaceTuples(List.of(tuples.get(1), tuples.get(2)));
+            assertThat(page.tupleCount()).isEqualTo(2);
+        }
+
+        BPlusTree tree = BPlusTree.create(metadata, bpm);
+
+        assertThat(tree.find(leafKey(10, rid10))).isNull();
+        assertThat(tree.find(leafKey(20, rid20))).isEqualTo(rid20);
+        assertThat(tree.find(leafKey(30, rid30))).isEqualTo(rid30);
+        assertThat(BPlusTreeDotDumper.dump(tree)).contains("page_1 [label=\"{page=1 | LEAF | keys: 20, 30}\"]");
     }
 
     private static ContainerId createIndexContainer(

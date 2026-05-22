@@ -21,4 +21,8 @@ public class PageHeader {
     public short getNumberOfSlots() {
         return numberOfSlots;
     }
+
+    public void setNumberOfSlots(short numberOfSlots) {
+        this.numberOfSlots = numberOfSlots;
+    }
 }

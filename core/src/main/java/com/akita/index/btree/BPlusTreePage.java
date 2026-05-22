@@ -8,7 +8,9 @@ import com.akita.page.Slot;
 import com.akita.page.SlottedPage;
 import com.akita.page.Tuple;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.List;
 
 public class BPlusTreePage extends SlottedPage implements AutoCloseable {
     private BTreePageType pageType;
@@ -80,6 +82,30 @@ public class BPlusTreePage extends SlottedPage implements AutoCloseable {
             data.put(slotDirectoryOffset(i), slot.getBytes());
         }
         return newSlot;
+    }
+
+    public List<Tuple> tuples() {
+        List<Tuple> tuples = new ArrayList<>(tupleCount());
+        for (int i = 0; i < tupleCount(); i++) {
+            tuples.add(tupleAt(i));
+        }
+        return tuples;
+    }
+
+    /**
+     * Replaces tuples in page with new tuples.
+     * Assumes the caller provides tuples in the desired logical order
+     * @param tuples New list of tuples to replace current ones
+     */
+    public void replaceTuples(List<Tuple> tuples) {
+        if (!(pageGuard instanceof WritePageGuard)) {
+            throw new IllegalStateException("pageGuard must be a WritePageGuard");
+        }
+
+        clearTuples();
+        for (Tuple tuple : tuples) {
+            super.insertTupleRaw(tuple);
+        }
     }
 
     public int lowerBound(Tuple searchTuple, Comparator<Tuple> cmp) {
