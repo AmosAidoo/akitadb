@@ -54,6 +54,8 @@ public final class BPlusTreeDotDumper {
                             pending.add(childBlockNumber);
                         }
                     }
+                } else if (page.isLeaf() && page.getNextLeafBlockNumber() != BPlusTreePage.NO_NEXT_LEAF) {
+                    edges.add("  page_" + blockNumber + " -> page_" + page.getNextLeafBlockNumber() + " [style=dashed, label=\"next\"];");
                 }
             }
         }

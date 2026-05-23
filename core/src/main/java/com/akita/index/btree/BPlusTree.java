@@ -102,13 +102,16 @@ public class BPlusTree {
     ) throws Exception {
         LeafSplit split = splitLeafTuples(fullKey, leaf);
         PageId rightPageId = allocatePageId();
+        long oldNextLeafBlockNumber = leaf.getNextLeafBlockNumber();
 
         leaf.replaceTuples(split.leftTuples());
+        leaf.setNextLeafBlockNumber(rightPageId.blockNumber());
         try (BPlusTreePage rightLeafPage = BPlusTreePage.initializeLeaf(
                 bufferPoolManager.allocatePage(rightPageId),
                 indexMetadata
         )) {
             rightLeafPage.replaceTuples(split.rightTuples());
+            rightLeafPage.setNextLeafBlockNumber(oldNextLeafBlockNumber);
         }
 
         insertIntoParent(
@@ -123,14 +126,15 @@ public class BPlusTree {
         LeafSplit split = splitLeafTuples(fullKey, rootLeaf);
 
         PageId leftPageId = allocatePageId();
+        PageId rightPageId = allocatePageId();
         try (BPlusTreePage leftLeafPage = BPlusTreePage.initializeLeaf(
                 bufferPoolManager.allocatePage(leftPageId),
                 indexMetadata
         )) {
             leftLeafPage.replaceTuples(split.leftTuples());
+            leftLeafPage.setNextLeafBlockNumber(rightPageId.blockNumber());
         }
 
-        PageId rightPageId = allocatePageId();
         try (BPlusTreePage rightLeafPage = BPlusTreePage.initializeLeaf(
                 bufferPoolManager.allocatePage(rightPageId),
                 indexMetadata
@@ -360,22 +364,34 @@ public class BPlusTree {
     public List<RecordId> scanRange(LeafBTreeKey lower, LeafBTreeKey upper) throws Exception {
         List<RecordId> results = new ArrayList<>();
 
-        try (BPlusTreePage leaf = findLeafPage(lower)) {
-            Comparator<Tuple> leafCmp = leafComparator();
-            Tuple lowerTuple = TupleSerializer.serializeLeaf(lower, indexMetadata);
-            Tuple upperTuple = TupleSerializer.serializeLeaf(upper, indexMetadata);
+        Comparator<Tuple> leafCmp = leafComparator();
+        Tuple lowerTuple = TupleSerializer.serializeLeaf(lower, indexMetadata);
+        Tuple upperTuple = TupleSerializer.serializeLeaf(upper, indexMetadata);
+        PageId currentPageId = findLeafPageId(lower);
+        boolean firstLeaf = true;
 
-            int startPos = leaf.lowerBound(lowerTuple, leafCmp);
+        while (currentPageId != null) {
+            try (BPlusTreePage leaf = BPlusTreePage.create(
+                    bufferPoolManager.readPage(currentPageId),
+                    indexMetadata
+            )) {
+                int startPos = firstLeaf ? leaf.lowerBound(lowerTuple, leafCmp) : 0;
 
-            for (int i = startPos; i < leaf.tupleCount(); i++) {
-                Tuple tuple = leaf.tupleAt(i);
-                if (leafCmp.compare(tuple, upperTuple) > 0) break;
-                results.add(LeafBTreeKey.ofLeaf(tuple, indexMetadata).rid());
+                for (int i = startPos; i < leaf.tupleCount(); i++) {
+                    Tuple tuple = leaf.tupleAt(i);
+                    if (leafCmp.compare(tuple, upperTuple) > 0) {
+                        return results;
+                    }
+                    results.add(LeafBTreeKey.ofLeaf(tuple, indexMetadata).rid());
+                }
+
+                long nextLeafBlockNumber = leaf.getNextLeafBlockNumber();
+                currentPageId = nextLeafBlockNumber == BPlusTreePage.NO_NEXT_LEAF
+                        ? null
+                        : new PageId(indexMetadata.containerId(), nextLeafBlockNumber);
+                firstLeaf = false;
             }
         }
-
-        // TODO: follow sibling pointers across leaf pages once next-leaf
-        // pointer is added to the leaf page header
 
         return results;
     }

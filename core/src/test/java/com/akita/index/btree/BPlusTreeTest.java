@@ -113,8 +113,8 @@ class BPlusTreeTest {
                 internalKey(10, 2),
                 internalKey(20, 3)
         );
-        writeLeaf(bm, metadata, 2, leafKey(5, fakeHeapRid(containerId, 5)));
-        writeLeaf(bm, metadata, 3, leafKey(10, fakeHeapRid(containerId, 10)));
+        writeLeaf(bm, metadata, 2, 3, leafKey(5, fakeHeapRid(containerId, 5)));
+        writeLeaf(bm, metadata, 3, 4, leafKey(10, fakeHeapRid(containerId, 10)));
         writeLeaf(bm, metadata, 4, leafKey(20, fakeHeapRid(containerId, 20)));
 
         BPlusTree tree = BPlusTree.open(metadata, bpm);
@@ -131,6 +131,8 @@ class BPlusTreeTest {
                   page_1 -> page_2;
                   page_1 -> page_3;
                   page_1 -> page_4;
+                  page_2 -> page_3 [style=dashed, label="next"];
+                  page_3 -> page_4 [style=dashed, label="next"];
                 }
                 """);
     }
@@ -182,8 +184,32 @@ class BPlusTreeTest {
                 "page_2 [label=\"{page=2 | LEAF | keys: " + paddedKey(0),
                 "page_3 [label=\"{page=3 | LEAF | keys: " + paddedKey(8),
                 "page_1 -> page_2;",
-                "page_1 -> page_3;"
+                "page_1 -> page_3;",
+                "page_2 -> page_3 [style=dashed, label=\"next\"];"
         );
+    }
+
+    @Test
+    void scanRangeFollowsLeafSiblingPointers(
+            BufferPoolManager bpm,
+            FileChannelBlockManager bm,
+            FileChannelContainerManager cm
+    ) throws Exception {
+        ContainerId containerId = createIndexContainer(bm, cm);
+        IndexMetadata metadata = intIndexMetadata(containerId);
+        RecordId rid5 = fakeHeapRid(containerId, 5);
+        RecordId rid10 = fakeHeapRid(containerId, 10);
+        RecordId rid20 = fakeHeapRid(containerId, 20);
+        RecordId rid30 = fakeHeapRid(containerId, 30);
+
+        writeInternal(bm, metadata, 1, 3, internalKey(20, 2));
+        writeLeaf(bm, metadata, 2, 3, leafKey(5, rid5), leafKey(10, rid10));
+        writeLeaf(bm, metadata, 3, leafKey(20, rid20), leafKey(30, rid30));
+
+        BPlusTree tree = BPlusTree.open(metadata, bpm);
+
+        assertThat(tree.scanRange(leafKey(10, rid10), leafKey(30, rid30)))
+                .containsExactly(rid10, rid20, rid30);
     }
 
     @Test
@@ -300,7 +326,8 @@ class BPlusTreeTest {
                 "page_1 -> page_2;",
                 "page_1 -> page_4;",
                 "page_1 -> page_3;",
-                "page_4 [label=\"{page=4 | LEAF | keys: " + paddedKey(8)
+                "page_4 [label=\"{page=4 | LEAF | keys: " + paddedKey(8),
+                "page_2 -> page_4 [style=dashed, label=\"next\"];"
         );
     }
 
@@ -393,11 +420,21 @@ class BPlusTreeTest {
             long blockNumber,
             LeafBTreeKey... keys
     ) throws Exception {
+        writeLeaf(bm, metadata, blockNumber, BPlusTreePage.NO_NEXT_LEAF, keys);
+    }
+
+    private static void writeLeaf(
+            FileChannelBlockManager bm,
+            IndexMetadata metadata,
+            long blockNumber,
+            long nextLeafBlockNumber,
+            LeafBTreeKey... keys
+    ) throws Exception {
         SlottedPageWriter writer = SlottedPageWriter.create(bm);
         for (LeafBTreeKey key : keys) {
             writer.addTuple(TupleSerializer.serializeLeaf(key, metadata));
         }
-        writer.writeTo(new PageId(metadata.containerId(), blockNumber), leafHeader());
+        writer.writeTo(new PageId(metadata.containerId(), blockNumber), leafHeader(nextLeafBlockNumber));
     }
 
     private static void writeInternal(
@@ -431,9 +468,10 @@ class BPlusTreeTest {
         writer.writeTo(new PageId(containerId, 0), prefixHeader, additionalHeaders);
     }
 
-    private static ByteBuffer leafHeader() {
-        ByteBuffer header = ByteBuffer.allocate(Byte.BYTES);
+    private static ByteBuffer leafHeader(long nextLeafBlockNumber) {
+        ByteBuffer header = ByteBuffer.allocate(Byte.BYTES + Long.BYTES);
         header.put((byte) 2);
+        header.putLong(nextLeafBlockNumber);
         return header;
     }
 

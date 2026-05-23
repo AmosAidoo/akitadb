@@ -14,8 +14,11 @@ import java.util.Comparator;
 import java.util.List;
 
 public class BPlusTreePage extends SlottedPage implements AutoCloseable {
+    public static final long NO_NEXT_LEAF = 0;
+
     private BTreePageType pageType;
     private long rightmostChildBlockNumber; // internal pages only
+    private long nextLeafBlockNumber; // leaf pages only
 
     private final PageGuard pageGuard;
     private final IndexMetadata indexMetadata;
@@ -32,7 +35,7 @@ public class BPlusTreePage extends SlottedPage implements AutoCloseable {
     }
 
     public static BPlusTreePage initializeLeaf(WritePageGuard pageGuard, IndexMetadata indexMetadata) {
-        initializeHeader(pageGuard.getData(), BTreePageType.LEAF, 0);
+        initializeHeader(pageGuard.getData(), BTreePageType.LEAF, NO_NEXT_LEAF);
         return create(pageGuard, indexMetadata);
     }
 
@@ -48,15 +51,13 @@ public class BPlusTreePage extends SlottedPage implements AutoCloseable {
     private static void initializeHeader(
             ByteBuffer data,
             BTreePageType pageType,
-            long rightmostChildBlockNumber
+            long pageTypeSpecificBlockNumber
     ) {
         data.clear();
         data.putShort(PageHeader.NUMBER_OF_SLOTS_OFFSET, (short) 0);
         data.position(PageHeader.SIZE);
         data.put(pageTypeCode(pageType));
-        if (pageType == BTreePageType.INTERNAL) {
-            data.putLong(rightmostChildBlockNumber);
-        }
+        data.putLong(pageTypeSpecificBlockNumber);
     }
 
     private static byte pageTypeCode(BTreePageType pageType) {
@@ -123,6 +124,24 @@ public class BPlusTreePage extends SlottedPage implements AutoCloseable {
         }
     }
 
+    public long getNextLeafBlockNumber() {
+        if (!isLeaf()) {
+            throw new IllegalStateException("Only leaf pages have a next leaf pointer");
+        }
+        return nextLeafBlockNumber;
+    }
+
+    public void setNextLeafBlockNumber(long nextLeafBlockNumber) {
+        if (!(pageGuard instanceof WritePageGuard)) {
+            throw new IllegalStateException("pageGuard must be a WritePageGuard");
+        }
+        if (!isLeaf()) {
+            throw new IllegalStateException("Only leaf pages have a next leaf pointer");
+        }
+        this.nextLeafBlockNumber = nextLeafBlockNumber;
+        data.putLong(PageHeader.SIZE + Byte.BYTES, nextLeafBlockNumber);
+    }
+
     public int lowerBound(Tuple searchTuple, Comparator<Tuple> cmp) {
         int l = 0, r = slots.size();
         while (l < r) {
@@ -185,14 +204,11 @@ public class BPlusTreePage extends SlottedPage implements AutoCloseable {
     }
 
     private int extendedHeaderSize() {
-        int extendedHeaderSize = Byte.BYTES;
-        if (pageType == BTreePageType.INTERNAL) {
-            extendedHeaderSize += Long.BYTES;
-        }
-        return extendedHeaderSize;
+        return Byte.BYTES + Long.BYTES;
     }
 
-    // Extended header layout: | pageType (byte) | rightmostChildBlockNumber (long, internal only) |
+    // Extended header layout:
+    // | pageType (byte) | rightmostChildBlockNumber (long, internal) OR nextLeafBlockNumber (long, leaf) |
     @Override
     protected void parseExtendedHeader(ByteBuffer data) {
         byte pageTypeByte = data.get();
@@ -204,6 +220,8 @@ public class BPlusTreePage extends SlottedPage implements AutoCloseable {
 
         if (this.pageType == BTreePageType.INTERNAL) {
             this.rightmostChildBlockNumber = data.getLong();
+        } else if (this.pageType == BTreePageType.LEAF) {
+            this.nextLeafBlockNumber = data.getLong();
         }
     }
 
