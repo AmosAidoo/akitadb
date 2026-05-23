@@ -11,7 +11,9 @@ import com.akita.storage.ContainerId;
 import com.akita.storage.PageAllocator;
 
 import java.util.ArrayList;
+import java.util.ArrayDeque;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 
@@ -65,7 +67,8 @@ public class BPlusTree {
                     "Index key size " + size + " bytes exceeds maximum of " + MAX_KEY_BYTES + " bytes"
             );
         }
-        try (BPlusTreePage leaf = findLeafPageForWrite(fullKey)) {
+        LeafDescent leafDescent = findLeafPageForWriteWithParents(fullKey);
+        try (BPlusTreePage leaf = leafDescent.leaf()) {
             if (size <= leaf.getRemainingSpace()) {
                 leaf.insertTupleSorted(
                         TupleSerializer.serializeLeaf(fullKey, indexMetadata),
@@ -74,25 +77,73 @@ public class BPlusTree {
             } else {
                 if (leaf.isLeaf() && isRootPage(leaf)) {
                     splitRootLeaf(fullKey, leaf);
+                } else {
+                    splitNonRootLeaf(fullKey, leaf, leafDescent.parentPageIds());
                 }
             }
         }
     }
 
+    private void splitNonRootLeaf(
+            LeafBTreeKey fullKey,
+            BPlusTreePage leaf,
+            Deque<PageId> parentPageIds
+    ) throws Exception {
+        LeafSplit split = splitLeafTuples(fullKey, leaf);
+        PageId rightPageId = allocatePageId();
+
+        ensureParentCanAccept(leaf.getPageId(), split.separatorKey(), parentPageIds);
+
+        leaf.replaceTuples(split.leftTuples());
+        try (BPlusTreePage rightLeafPage = BPlusTreePage.initializeLeaf(
+                bufferPoolManager.allocatePage(rightPageId),
+                indexMetadata
+        )) {
+            rightLeafPage.replaceTuples(split.rightTuples());
+        }
+
+        insertIntoParentNonFull(
+                leaf.getPageId(),
+                split.separatorKey(),
+                rightPageId,
+                parentPageIds
+        );
+    }
+
+    private void ensureParentCanAccept(
+            PageId leftChildPageId,
+            BTreeKey separatorKey,
+            Deque<PageId> parentPageIds
+    ) throws Exception {
+        if (parentPageIds.isEmpty()) {
+            throw new IllegalStateException("Non-root split requires a parent page");
+        }
+
+        Tuple newInternalTuple = TupleSerializer.serializeInternal(
+                separatorKey,
+                leftChildPageId.blockNumber(),
+                indexMetadata
+        );
+
+        try (BPlusTreePage parentPage = BPlusTreePage.create(
+                bufferPoolManager.readPage(parentPageIds.peek()),
+                indexMetadata
+        )) {
+            if (newInternalTuple.serializedSize() > parentPage.getRemainingSpace()) {
+                throw new UnsupportedOperationException("Parent split is not implemented yet");
+            }
+        }
+    }
+
     private void splitRootLeaf(LeafBTreeKey fullKey, BPlusTreePage rootLeaf) throws Exception {
-        List<Tuple> tuples = rootLeaf.tuples();
-        tuples.add(TupleSerializer.serializeLeaf(fullKey, indexMetadata));
-        tuples.sort(leafComparator());
-        int middle = tuples.size() / 2;
-        List<Tuple> leftTuples = tuples.subList(0, middle);
-        List<Tuple> rightTuples = tuples.subList(middle, tuples.size());
+        LeafSplit split = splitLeafTuples(fullKey, rootLeaf);
 
         PageId leftPageId = allocatePageId();
         try (BPlusTreePage leftLeafPage = BPlusTreePage.initializeLeaf(
                 bufferPoolManager.allocatePage(leftPageId),
                 indexMetadata
         )) {
-            leftLeafPage.replaceTuples(leftTuples);
+            leftLeafPage.replaceTuples(split.leftTuples());
         }
 
         PageId rightPageId = allocatePageId();
@@ -100,13 +151,11 @@ public class BPlusTree {
                 bufferPoolManager.allocatePage(rightPageId),
                 indexMetadata
         )) {
-            rightLeafPage.replaceTuples(rightTuples);
+            rightLeafPage.replaceTuples(split.rightTuples());
         }
 
-        LeafBTreeKey firstRightKey = LeafBTreeKey.ofLeaf(rightTuples.getFirst(), indexMetadata);
-        BTreeKey separatorKey = new BTreeKey(firstRightKey.columns());
         Tuple rootTuple = TupleSerializer.serializeInternal(
-                separatorKey,
+                split.separatorKey(),
                 leftPageId.blockNumber(),
                 indexMetadata
         );
@@ -121,6 +170,23 @@ public class BPlusTree {
         }
     }
 
+    private LeafSplit splitLeafTuples(LeafBTreeKey fullKey, BPlusTreePage leaf) {
+        List<Tuple> tuples = leaf.tuples();
+        tuples.add(TupleSerializer.serializeLeaf(fullKey, indexMetadata));
+        tuples.sort(leafComparator());
+
+        int middle = tuples.size() / 2;
+        List<Tuple> leftTuples = new ArrayList<>(tuples.subList(0, middle));
+        List<Tuple> rightTuples = new ArrayList<>(tuples.subList(middle, tuples.size()));
+        LeafBTreeKey firstRightKey = LeafBTreeKey.ofLeaf(rightTuples.getFirst(), indexMetadata);
+
+        return new LeafSplit(
+                leftTuples,
+                rightTuples,
+                new BTreeKey(firstRightKey.columns())
+        );
+    }
+
     private BPlusTreePage findLeafPageForWrite(LeafBTreeKey searchKey) throws Exception {
         PageId leafPageId = findLeafPageId(searchKey);
         return BPlusTreePage.create(
@@ -129,12 +195,87 @@ public class BPlusTree {
         );
     }
 
+    private LeafDescent findLeafPageForWriteWithParents(LeafBTreeKey searchKey) throws Exception {
+        DescentPath path = findLeafPageIdWithParents(searchKey);
+        BPlusTreePage leaf = BPlusTreePage.create(
+                bufferPoolManager.writePage(path.leafPageId()),
+                indexMetadata
+        );
+        return new LeafDescent(leaf, path.parentPageIds());
+    }
+
     private boolean isRootPage(BPlusTreePage page) {
         return page.getPageId().blockNumber() == ROOT_BLOCK_NUMBER;
     }
 
     private PageId allocatePageId() {
         return pageAllocator.allocate(indexMetadata.containerId());
+    }
+
+    private void insertIntoParentNonFull(
+            PageId leftChildPageId,
+            BTreeKey separatorKey,
+            PageId rightChildPageId,
+            Deque<PageId> parentPageIds
+    ) throws Exception {
+        if (parentPageIds.isEmpty()) {
+            throw new IllegalStateException("Non-root split requires a parent page");
+        }
+
+        PageId parentPageId = parentPageIds.pop();
+        Tuple newInternalTuple = TupleSerializer.serializeInternal(
+                separatorKey,
+                leftChildPageId.blockNumber(),
+                indexMetadata
+        );
+
+        try (BPlusTreePage parentPage = BPlusTreePage.create(
+                bufferPoolManager.writePage(parentPageId),
+                indexMetadata
+        )) {
+            if (newInternalTuple.serializedSize() > parentPage.getRemainingSpace()) {
+                throw new UnsupportedOperationException("Parent split is not implemented yet");
+            }
+
+            InternalPageEntries entries = internalPageEntries(parentPage);
+            int childIndex = entries.children().indexOf(leftChildPageId.blockNumber());
+            if (childIndex < 0) {
+                throw new IllegalStateException("Parent does not reference child page " + leftChildPageId);
+            }
+
+            entries.keys().add(childIndex, separatorKey);
+            entries.children().add(childIndex + 1, rightChildPageId.blockNumber());
+            parentPage.replaceInternalTuples(
+                    entries.children().getLast(),
+                    serializeInternalEntries(entries)
+            );
+        }
+    }
+
+    private InternalPageEntries internalPageEntries(BPlusTreePage page) {
+        List<BTreeKey> keys = new ArrayList<>();
+        List<Long> children = new ArrayList<>();
+
+        for (Tuple tuple : page.tuples()) {
+            tuple.clear();
+            children.add(tuple.readLong());
+            keys.add(BTreeKey.ofInternal(tuple, indexMetadata));
+        }
+        children.add(page.getRightmostChildBlockNumber());
+
+        return new InternalPageEntries(keys, children);
+    }
+
+    private List<Tuple> serializeInternalEntries(InternalPageEntries entries) {
+        List<Tuple> tuples = new ArrayList<>(entries.keys().size());
+        for (int i = 0; i < entries.keys().size(); i++) {
+            tuples.add(TupleSerializer.serializeInternal(
+                    entries.keys().get(i),
+                    entries.children().get(i),
+                    indexMetadata
+            ));
+        }
+        return tuples;
     }
 
     public RecordId find(LeafBTreeKey fullKey) throws Exception {
@@ -182,10 +323,15 @@ public class BPlusTree {
     }
 
     private PageId findLeafPageId(LeafBTreeKey searchKey) throws Exception {
+        return findLeafPageIdWithParents(searchKey).leafPageId();
+    }
+
+    private DescentPath findLeafPageIdWithParents(LeafBTreeKey searchKey) throws Exception {
         PageId currentPageId = new PageId(
                 indexMetadata.containerId(),
                 ROOT_BLOCK_NUMBER
         );
+        Deque<PageId> parentPageIds = new ArrayDeque<>();
 
         while (true) {
             BPlusTreePage page = BPlusTreePage.create(
@@ -195,7 +341,7 @@ public class BPlusTree {
 
             if (page.isLeaf()) {
                 try {
-                    return currentPageId;
+                    return new DescentPath(currentPageId, parentPageIds);
                 } finally {
                     page.close();
                 }
@@ -203,6 +349,7 @@ public class BPlusTree {
 
             PageId childPageId;
             try {
+                parentPageIds.push(currentPageId);
                 childPageId = findChildPageId(page, searchKey);
             } finally {
                 page.close(); // release read latch before descending
@@ -211,6 +358,14 @@ public class BPlusTree {
             currentPageId = childPageId;
         }
     }
+
+    private record LeafDescent(BPlusTreePage leaf, Deque<PageId> parentPageIds) {}
+
+    private record DescentPath(PageId leafPageId, Deque<PageId> parentPageIds) {}
+
+    private record LeafSplit(List<Tuple> leftTuples, List<Tuple> rightTuples, BTreeKey separatorKey) {}
+
+    private record InternalPageEntries(List<BTreeKey> keys, List<Long> children) {}
 
     // Routes through an internal page using upperBound on column-only comparison.
     // upperBound gives us the first separator strictly greater than the search key,

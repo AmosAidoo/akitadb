@@ -109,6 +109,20 @@ public class BPlusTreePage extends SlottedPage implements AutoCloseable {
         }
     }
 
+    public void replaceInternalTuples(long rightmostChildBlockNumber, List<Tuple> tuples) {
+        if (!(pageGuard instanceof WritePageGuard)) {
+            throw new IllegalStateException("pageGuard must be a WritePageGuard");
+        }
+
+        initializeHeader(data, BTreePageType.INTERNAL, rightmostChildBlockNumber);
+        this.pageType = BTreePageType.INTERNAL;
+        this.rightmostChildBlockNumber = rightmostChildBlockNumber;
+        clearTuples();
+        for (Tuple tuple : tuples) {
+            super.insertTupleRaw(tuple);
+        }
+    }
+
     public int lowerBound(Tuple searchTuple, Comparator<Tuple> cmp) {
         int l = 0, r = slots.size();
         while (l < r) {

@@ -250,6 +250,42 @@ class BPlusTreeTest {
         assertThat(BPlusTreeDotDumper.dump(tree)).contains("page_1 [label=\"{page=1 | LEAF | keys: 20, 30}\"]");
     }
 
+    @Test
+    void splitsNonRootLeafIntoNonFullParent(
+            BufferPoolManager bpm,
+            FileChannelBlockManager bm,
+            FileChannelContainerManager cm
+    ) throws Exception {
+        ContainerId containerId = createIndexContainer(bm, cm);
+        IndexMetadata metadata = varcharIndexMetadata(containerId);
+        List<LeafBTreeKey> initialKeys = new ArrayList<>();
+        for (int i = 0; i < 16; i++) {
+            initialKeys.add(leafKey(paddedKey(i), fakeHeapRid(containerId, i)));
+        }
+        LeafBTreeKey insertedKey = leafKey(paddedKey(16), fakeHeapRid(containerId, 16));
+        LeafBTreeKey rightTreeKey = leafKey(paddedKey(50), fakeHeapRid(containerId, 50));
+
+        writeInternal(bm, metadata, 1, 3, internalKey(paddedKey(50), 2));
+        writeLeaf(bm, metadata, 2, initialKeys.toArray(LeafBTreeKey[]::new));
+        writeLeaf(bm, metadata, 3, rightTreeKey);
+        writeIndexPageDirectory(bm, containerId, 1, 2, 3);
+
+        BPlusTree tree = BPlusTree.create(metadata, bpm);
+        tree.insert(insertedKey);
+
+        assertThat(tree.find(initialKeys.getFirst())).isEqualTo(initialKeys.getFirst().rid());
+        assertThat(tree.find(insertedKey)).isEqualTo(insertedKey.rid());
+        assertThat(tree.find(initialKeys.getLast())).isEqualTo(initialKeys.getLast().rid());
+        assertThat(tree.find(rightTreeKey)).isEqualTo(rightTreeKey.rid());
+        assertThat(BPlusTreeDotDumper.dump(tree)).contains(
+                "page_1 [label=\"{page=1 | INTERNAL | keys: " + paddedKey(8) + ", " + paddedKey(50) + "}\"]",
+                "page_1 -> page_2;",
+                "page_1 -> page_4;",
+                "page_1 -> page_3;",
+                "page_4 [label=\"{page=4 | LEAF | keys: " + paddedKey(8)
+        );
+    }
+
     private static ContainerId createIndexContainer(
             FileChannelBlockManager bm,
             FileChannelContainerManager cm
@@ -310,6 +346,23 @@ class BPlusTreeTest {
         writer.writeTo(new PageId(metadata.containerId(), blockNumber), internalHeader(rightmostChildBlockNumber));
     }
 
+    private static void writeIndexPageDirectory(
+            FileChannelBlockManager bm,
+            ContainerId containerId,
+            long... blockNumbers
+    ) throws Exception {
+        ByteBuffer prefixHeader = ByteBuffer.allocate(HeapFileHeader.SIZE);
+        HeapFileHeader.write(prefixHeader, ObjectType.INDEX);
+        ByteBuffer additionalHeaders = ByteBuffer.allocate(Short.BYTES);
+        additionalHeaders.putShort((short) 0);
+
+        SlottedPageWriter writer = SlottedPageWriter.create(bm);
+        for (long blockNumber : blockNumbers) {
+            writer.addPageDirectoryTuple(blockNumber, 0);
+        }
+        writer.writeTo(new PageId(containerId, 0), prefixHeader, additionalHeaders);
+    }
+
     private static ByteBuffer leafHeader() {
         ByteBuffer header = ByteBuffer.allocate(Byte.BYTES);
         header.put((byte) 2);
@@ -337,6 +390,10 @@ class BPlusTreeTest {
 
     private static InternalEntry internalKey(int value, long leftChildBlockNumber) {
         return new InternalEntry(new BTreeKey(List.of(new AkitaValue.IntVal(value))), leftChildBlockNumber);
+    }
+
+    private static InternalEntry internalKey(String value, long leftChildBlockNumber) {
+        return new InternalEntry(new BTreeKey(List.of(new AkitaValue.VarcharVal(value))), leftChildBlockNumber);
     }
 
     private static RecordId fakeHeapRid(ContainerId containerId, int value) {
