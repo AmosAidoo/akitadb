@@ -7,6 +7,7 @@ import com.akita.heap.HeapFileHeader;
 import com.akita.storage.ContainerId;
 
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.concurrent.ExecutionException;
 
 /**
@@ -26,6 +27,7 @@ public class PageDirectory extends SlottedPage {
 
     private PageDirectory(ContainerId containerId) {
         this.containerId = containerId;
+        this.slots = new ArrayList<>();
     }
 
     public static PageDirectory create(ContainerId containerId) {
@@ -107,5 +109,26 @@ public class PageDirectory extends SlottedPage {
             }
         }
         return -1;
+    }
+
+    public long highestKnownBlockNumber() {
+        long highest = FIRST_PAGE_DIRECTORY_NUMBER;
+        PageDirectory current = this;
+
+        while (current != null) {
+            for (Slot slot : current.getSlots()) {
+                Tuple entry = current.getTuple(slot.getOffset());
+                long blockNumber = entry.readLong();
+                if (blockNumber > highest) {
+                    highest = blockNumber;
+                }
+            }
+            if (current.nextBlockPointer > highest) {
+                highest = current.nextBlockPointer;
+            }
+            current = current.next;
+        }
+
+        return highest;
     }
 }

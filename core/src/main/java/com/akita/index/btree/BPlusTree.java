@@ -6,7 +6,9 @@ import com.akita.catalog.IndexMetadata;
 import com.akita.page.PageDirectory;
 import com.akita.page.RecordId;
 import com.akita.page.Tuple;
+import com.akita.storage.BootstrapPageAllocator;
 import com.akita.storage.ContainerId;
+import com.akita.storage.PageAllocator;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -19,11 +21,18 @@ public class BPlusTree {
 
     private final IndexMetadata indexMetadata;
     private final BufferPoolManager bufferPoolManager;
+    private final PageAllocator pageAllocator;
     final PageDirectory pageDirectory;
 
-    private BPlusTree(IndexMetadata indexMetadata, BufferPoolManager bufferPoolManager, PageDirectory pageDirectory) {
+    private BPlusTree(
+            IndexMetadata indexMetadata,
+            BufferPoolManager bufferPoolManager,
+            PageAllocator pageAllocator,
+            PageDirectory pageDirectory
+    ) {
         this.indexMetadata = indexMetadata;
         this.bufferPoolManager = bufferPoolManager;
+        this.pageAllocator = pageAllocator;
         this.pageDirectory = pageDirectory;
     }
 
@@ -33,7 +42,12 @@ public class BPlusTree {
                 containerId,
                 bufferPoolManager
         );
-        return new BPlusTree(indexMetadata, bufferPoolManager, pageDirectory);
+        return new BPlusTree(
+                indexMetadata,
+                bufferPoolManager,
+                BootstrapPageAllocator.create(pageDirectory, ROOT_BLOCK_NUMBER),
+                pageDirectory
+        );
     }
 
     IndexMetadata indexMetadata() {
@@ -58,9 +72,17 @@ public class BPlusTree {
                         leafComparator()
                 );
             } else {
-
+                if (leaf.isLeaf() && isRootPage(leaf)) {
+                    splitRootLeaf(fullKey, leaf);
+                }
             }
         }
+    }
+
+    private void splitRootLeaf(LeafBTreeKey fullKey, BPlusTreePage rootLeaf) {
+        List<Tuple> tuples = rootLeaf.tuples();
+        tuples.add(TupleSerializer.serializeLeaf(fullKey, indexMetadata));
+        tuples.sort(leafComparator());
     }
 
     private BPlusTreePage findLeafPageForWrite(LeafBTreeKey searchKey) throws Exception {
@@ -69,6 +91,14 @@ public class BPlusTree {
                 bufferPoolManager.writePage(leafPageId),
                 indexMetadata
         );
+    }
+
+    private boolean isRootPage(BPlusTreePage page) {
+        return page.getPageId().blockNumber() == ROOT_BLOCK_NUMBER;
+    }
+
+    private PageId allocatePageId() {
+        return pageAllocator.allocate(indexMetadata.containerId());
     }
 
     public RecordId find(LeafBTreeKey fullKey) throws Exception {

@@ -2,6 +2,7 @@ package com.akita.index.btree;
 
 import com.akita.buffer.guards.PageGuard;
 import com.akita.buffer.guards.WritePageGuard;
+import com.akita.buffer.PageId;
 import com.akita.catalog.IndexMetadata;
 import com.akita.page.PageHeader;
 import com.akita.page.Slot;
@@ -139,6 +140,10 @@ public class BPlusTreePage extends SlottedPage implements AutoCloseable {
 
     public int tupleCount() {
         return slots.size();
+    }
+
+    public PageId getPageId() {
+        return pageGuard.getPageId();
     }
 
     public boolean isLeaf() {
