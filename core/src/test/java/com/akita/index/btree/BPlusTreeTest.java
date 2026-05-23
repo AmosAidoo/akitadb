@@ -286,6 +286,56 @@ class BPlusTreeTest {
         );
     }
 
+    @Test
+    void splitsFullRootInternalWhenLeafPromotesIntoIt(
+            BufferPoolManager bpm,
+            FileChannelBlockManager bm,
+            FileChannelContainerManager cm
+    ) throws Exception {
+        ContainerId containerId = createIndexContainer(bm, cm);
+        IndexMetadata metadata = varcharIndexMetadata(containerId);
+        List<LeafBTreeKey> leftmostKeys = new ArrayList<>();
+        for (int i = 0; i < 16; i++) {
+            leftmostKeys.add(leafKey(paddedKey(i), fakeHeapRid(containerId, i)));
+        }
+        LeafBTreeKey insertedKey = leafKey(paddedKey(16), fakeHeapRid(containerId, 16));
+        List<InternalEntry> rootEntries = new ArrayList<>();
+        List<Long> existingBlocks = new ArrayList<>();
+        existingBlocks.add(1L);
+
+        for (int i = 0; i < 16; i++) {
+            long childBlockNumber = i + 2L;
+            rootEntries.add(internalKey(paddedKey(50 + i), childBlockNumber));
+            existingBlocks.add(childBlockNumber);
+        }
+        existingBlocks.add(18L);
+
+        writeInternal(bm, metadata, 1, 18, rootEntries.toArray(InternalEntry[]::new));
+        writeLeaf(bm, metadata, 2, leftmostKeys.toArray(LeafBTreeKey[]::new));
+        for (int i = 0; i < 16; i++) {
+            writeLeaf(bm, metadata, i + 3L, leafKey(paddedKey(50 + i), fakeHeapRid(containerId, 50 + i)));
+        }
+        writeIndexPageDirectory(
+                bm,
+                containerId,
+                existingBlocks.stream().mapToLong(Long::longValue).toArray()
+        );
+
+        BPlusTree tree = BPlusTree.create(metadata, bpm);
+        tree.insert(insertedKey);
+
+        assertThat(tree.find(leftmostKeys.getFirst())).isEqualTo(leftmostKeys.getFirst().rid());
+        assertThat(tree.find(insertedKey)).isEqualTo(insertedKey.rid());
+        assertThat(tree.find(leafKey(paddedKey(65), fakeHeapRid(containerId, 65))))
+                .isEqualTo(fakeHeapRid(containerId, 65));
+        assertThat(BPlusTreeDotDumper.dump(tree)).contains(
+                "page_1 [label=\"{page=1 | INTERNAL | keys: " + paddedKey(57) + "}\"]",
+                "page_20 [label=\"{page=20 | INTERNAL | keys: " + paddedKey(8),
+                "page_21 [label=\"{page=21 | INTERNAL | keys: " + paddedKey(58),
+                "page_19 [label=\"{page=19 | LEAF | keys: " + paddedKey(8)
+        );
+    }
+
     private static ContainerId createIndexContainer(
             FileChannelBlockManager bm,
             FileChannelContainerManager cm

@@ -92,8 +92,6 @@ public class BPlusTree {
         LeafSplit split = splitLeafTuples(fullKey, leaf);
         PageId rightPageId = allocatePageId();
 
-        ensureParentCanAccept(leaf.getPageId(), split.separatorKey(), parentPageIds);
-
         leaf.replaceTuples(split.leftTuples());
         try (BPlusTreePage rightLeafPage = BPlusTreePage.initializeLeaf(
                 bufferPoolManager.allocatePage(rightPageId),
@@ -102,37 +100,12 @@ public class BPlusTree {
             rightLeafPage.replaceTuples(split.rightTuples());
         }
 
-        insertIntoParentNonFull(
+        insertIntoParent(
                 leaf.getPageId(),
                 split.separatorKey(),
                 rightPageId,
                 parentPageIds
         );
-    }
-
-    private void ensureParentCanAccept(
-            PageId leftChildPageId,
-            BTreeKey separatorKey,
-            Deque<PageId> parentPageIds
-    ) throws Exception {
-        if (parentPageIds.isEmpty()) {
-            throw new IllegalStateException("Non-root split requires a parent page");
-        }
-
-        Tuple newInternalTuple = TupleSerializer.serializeInternal(
-                separatorKey,
-                leftChildPageId.blockNumber(),
-                indexMetadata
-        );
-
-        try (BPlusTreePage parentPage = BPlusTreePage.create(
-                bufferPoolManager.readPage(parentPageIds.peek()),
-                indexMetadata
-        )) {
-            if (newInternalTuple.serializedSize() > parentPage.getRemainingSpace()) {
-                throw new UnsupportedOperationException("Parent split is not implemented yet");
-            }
-        }
     }
 
     private void splitRootLeaf(LeafBTreeKey fullKey, BPlusTreePage rootLeaf) throws Exception {
@@ -212,7 +185,7 @@ public class BPlusTree {
         return pageAllocator.allocate(indexMetadata.containerId());
     }
 
-    private void insertIntoParentNonFull(
+    private void insertIntoParent(
             PageId leftChildPageId,
             BTreeKey separatorKey,
             PageId rightChildPageId,
@@ -233,10 +206,6 @@ public class BPlusTree {
                 bufferPoolManager.writePage(parentPageId),
                 indexMetadata
         )) {
-            if (newInternalTuple.serializedSize() > parentPage.getRemainingSpace()) {
-                throw new UnsupportedOperationException("Parent split is not implemented yet");
-            }
-
             InternalPageEntries entries = internalPageEntries(parentPage);
             int childIndex = entries.children().indexOf(leftChildPageId.blockNumber());
             if (childIndex < 0) {
@@ -245,11 +214,97 @@ public class BPlusTree {
 
             entries.keys().add(childIndex, separatorKey);
             entries.children().add(childIndex + 1, rightChildPageId.blockNumber());
-            parentPage.replaceInternalTuples(
-                    entries.children().getLast(),
-                    serializeInternalEntries(entries)
+
+            if (newInternalTuple.serializedSize() <= parentPage.getRemainingSpace()) {
+                parentPage.replaceInternalTuples(
+                        entries.children().getLast(),
+                        serializeInternalEntries(entries)
+                );
+                return;
+            }
+
+            splitInternalPage(parentPage, entries, parentPageIds);
+        }
+    }
+
+    private void splitInternalPage(
+            BPlusTreePage page,
+            InternalPageEntries entries,
+            Deque<PageId> parentPageIds
+    ) throws Exception {
+        int middle = entries.keys().size() / 2;
+        BTreeKey promotedKey = entries.keys().get(middle);
+
+        InternalPageEntries leftEntries = new InternalPageEntries(
+                new ArrayList<>(entries.keys().subList(0, middle)),
+                new ArrayList<>(entries.children().subList(0, middle + 1))
+        );
+        InternalPageEntries rightEntries = new InternalPageEntries(
+                new ArrayList<>(entries.keys().subList(middle + 1, entries.keys().size())),
+                new ArrayList<>(entries.children().subList(middle + 1, entries.children().size()))
+        );
+
+        if (isRootPage(page)) {
+            splitRootInternal(promotedKey, leftEntries, rightEntries, page);
+            return;
+        }
+
+        page.replaceInternalTuples(
+                leftEntries.children().getLast(),
+                serializeInternalEntries(leftEntries)
+        );
+
+        PageId rightPageId = allocatePageId();
+        try (BPlusTreePage rightPage = BPlusTreePage.initializeInternal(
+                bufferPoolManager.allocatePage(rightPageId),
+                indexMetadata,
+                rightEntries.children().getLast()
+        )) {
+            rightPage.replaceInternalTuples(
+                    rightEntries.children().getLast(),
+                    serializeInternalEntries(rightEntries)
             );
         }
+
+        insertIntoParent(page.getPageId(), promotedKey, rightPageId, parentPageIds);
+    }
+
+    private void splitRootInternal(
+            BTreeKey promotedKey,
+            InternalPageEntries leftEntries,
+            InternalPageEntries rightEntries,
+            BPlusTreePage rootPage
+    ) throws Exception {
+        PageId leftPageId = allocatePageId();
+        try (BPlusTreePage leftPage = BPlusTreePage.initializeInternal(
+                bufferPoolManager.allocatePage(leftPageId),
+                indexMetadata,
+                leftEntries.children().getLast()
+        )) {
+            leftPage.replaceInternalTuples(
+                    leftEntries.children().getLast(),
+                    serializeInternalEntries(leftEntries)
+            );
+        }
+
+        PageId rightPageId = allocatePageId();
+        try (BPlusTreePage rightPage = BPlusTreePage.initializeInternal(
+                bufferPoolManager.allocatePage(rightPageId),
+                indexMetadata,
+                rightEntries.children().getLast()
+        )) {
+            rightPage.replaceInternalTuples(
+                    rightEntries.children().getLast(),
+                    serializeInternalEntries(rightEntries)
+            );
+        }
+
+        Tuple rootTuple = TupleSerializer.serializeInternal(
+                promotedKey,
+                leftPageId.blockNumber(),
+                indexMetadata
+        );
+        rootPage.replaceInternalTuples(rightPageId.blockNumber(), List.of(rootTuple));
     }
 
     private InternalPageEntries internalPageEntries(BPlusTreePage page) {
