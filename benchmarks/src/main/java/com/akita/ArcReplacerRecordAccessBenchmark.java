@@ -32,6 +32,7 @@ import com.akita.buffer.replacers.arc.ArcReplacer;
 import com.akita.storage.ContainerId;
 import org.openjdk.jmh.annotations.*;
 
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 @State(Scope.Thread)
@@ -50,7 +51,7 @@ public class ArcReplacerRecordAccessBenchmark {
     @Setup(Level.Trial)
     public void setup() {
         replacer = ArcReplacer.create(BUFFER_POOL_SIZE);
-        containerId = ContainerId.valueOf(1);
+        containerId = ContainerId.fromUUID(new UUID(0, 1));
 
         frameIds = new FrameId[BUFFER_POOL_SIZE];
         pageIds = new PageId[BUFFER_POOL_SIZE];
