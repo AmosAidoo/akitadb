@@ -22,7 +22,9 @@ public class HeapFile {
     }
 
     public static HeapFile open(ContainerId containerId, BufferPoolManager bufferPoolManager) throws Exception {
-        ReadPageGuard headerGuard = bufferPoolManager.readPage(new PageId(containerId, 0));
+        ReadPageGuard headerGuard = bufferPoolManager.readPage(
+                new PageId(containerId, PageDirectory.FIRST_PAGE_DIRECTORY_NUMBER)
+        );
         HeapFileHeader heapFileHeader = HeapFileHeader.parse(headerGuard.getData());
         headerGuard.close();
 
@@ -36,7 +38,7 @@ public class HeapFile {
 
     public Tuple getTuple(RecordId recordId) throws Exception {
         try (HeapPage heapPage = HeapPage.create(bufferPoolManager.readPage(recordId.pageId()))) {
-            return heapPage.getTuple(recordId.slot());
+            return heapPage.getTuple(recordId.slotOffset());
         }
     }
 
@@ -58,7 +60,7 @@ public class HeapFile {
                 remainingFreeSpace = heapPage.getFreeSpace();
             }
             updatePageDirectoryEntry(targetPage, remainingFreeSpace);
-            return new RecordId(targetPage, slot);
+            return new RecordId(targetPage, slot.getOffset());
         }
         // TODO: allocate a new page when no free space exists (I think will be handled by caller)
         return null;
@@ -78,17 +80,17 @@ public class HeapFile {
     }
 
     private void updatePageDirectoryEntry(PageId targetPage, int newFreeSpace) throws Exception {
-        // For now, only the first page directory (block 1) is handled.
+        // For now, only the first page directory (block 0) is handled.
         // Multi-directory traversal is a TODO once lazy loading is wired up.
         PageId directoryPageId = new PageId(targetPage.containerId(), PageDirectory.FIRST_PAGE_DIRECTORY_NUMBER);
 
         try (WritePageGuard dirGuard = bufferPoolManager.writePage(directoryPageId)) {
             ByteBuffer dirData = dirGuard.getData();
             PageDirectory dir = PageDirectory.create(targetPage.containerId());
-            dir.parsePage(dirData);
+            dir.parseFirstPage(dirData);
 
             for (Slot slot : dir.getSlots()) {
-                Tuple entry = dir.getTuple(slot);
+                Tuple entry = dir.getTuple(slot.getOffset());
                 long blockNumber = entry.readLong();
                 if (blockNumber == targetPage.blockNumber()) {
                     Tuple updated = PageDirectory.createTuple(blockNumber, newFreeSpace);

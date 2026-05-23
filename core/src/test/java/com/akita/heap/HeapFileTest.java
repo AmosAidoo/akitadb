@@ -31,7 +31,7 @@ class HeapFileTest {
             FileChannelContainerManager cm
     ) throws Exception {
         ContainerId containerId = ContainerFixture.create(bm, cm).createTable();
-        PageId pageId = new PageId(containerId, 2);
+        PageId pageId = new PageId(containerId, 1);
 
         List<RecordId> records = SlottedPageWriter.create(bm)
                 .addShortTuple((short) 10)
@@ -52,12 +52,12 @@ class HeapFileTest {
     ) throws Exception {
         ContainerId containerId = ContainerFixture.create(bm, cm).createTable();
 
-        // Insert free space map for page 2
+        // Insert free space map for page 1
         ByteBuffer additionalHeaders = ByteBuffer.allocate(2);
         additionalHeaders.putShort((short) 0);
         SlottedPageWriter.create(bm)
-                .addPageDirectoryTuple(2, BlockManager.BLOCK_SIZE - PageHeader.SIZE)
-                .writeTo(new PageId(containerId, 1), additionalHeaders);
+                .addPageDirectoryTuple(1, BlockManager.BLOCK_SIZE - PageHeader.SIZE)
+                .writeTo(new PageId(containerId, 0), tableHeader(), additionalHeaders);
 
         HeapFile heapFile = HeapFile.open(containerId, bpm);
 
@@ -88,8 +88,8 @@ class HeapFileTest {
         ByteBuffer additionalHeaders = ByteBuffer.allocate(2);
         additionalHeaders.putShort((short) 0);
         SlottedPageWriter.create(bm)
-                .addPageDirectoryTuple(2, initialFreeSpace)
-                .writeTo(new PageId(containerId, 1), additionalHeaders);
+                .addPageDirectoryTuple(1, initialFreeSpace)
+                .writeTo(new PageId(containerId, 0), tableHeader(), additionalHeaders);
 
         HeapFile heapFile = HeapFile.open(containerId, bpm);
 
@@ -99,10 +99,16 @@ class HeapFileTest {
         heapFile.insertTuple(tuple);
 
         HeapFile freshHeapFile = HeapFile.open(containerId, bpm);
-        PageId heapPageId = new PageId(containerId, 2);
+        PageId heapPageId = new PageId(containerId, 1);
 
         int expectedFreeSpace = initialFreeSpace - Slot.SERIALIZED_SIZE - Short.BYTES;
         assertThat(freshHeapFile.pageDirectory.getFreeSpaceForPage(heapPageId))
                 .isEqualTo(expectedFreeSpace);
+    }
+
+    private static ByteBuffer tableHeader() {
+        ByteBuffer buffer = ByteBuffer.allocate(HeapFileHeader.SIZE);
+        HeapFileHeader.write(buffer, ObjectType.TABLE);
+        return buffer;
     }
 }
