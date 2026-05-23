@@ -38,7 +38,18 @@ public class BPlusTree {
         this.pageDirectory = pageDirectory;
     }
 
-    public static BPlusTree create(IndexMetadata indexMetadata, BufferPoolManager bufferPoolManager) throws ExecutionException, InterruptedException {
+    public static BPlusTree createNew(IndexMetadata indexMetadata, BufferPoolManager bufferPoolManager) throws Exception {
+        PageId rootPageId = new PageId(indexMetadata.containerId(), ROOT_BLOCK_NUMBER);
+        try (BPlusTreePage ignored = BPlusTreePage.initializeLeaf(
+                bufferPoolManager.allocatePage(rootPageId),
+                indexMetadata
+        )) {
+            // Root page is initialized by the BPlusTreePage factory.
+        }
+        return open(indexMetadata, bufferPoolManager);
+    }
+
+    public static BPlusTree open(IndexMetadata indexMetadata, BufferPoolManager bufferPoolManager) throws ExecutionException, InterruptedException {
         ContainerId containerId = indexMetadata.containerId();
         PageDirectory pageDirectory = PageDirectory.load(
                 containerId,

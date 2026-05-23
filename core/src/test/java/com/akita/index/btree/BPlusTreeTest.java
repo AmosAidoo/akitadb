@@ -32,6 +32,24 @@ import static org.assertj.core.api.Assertions.assertThat;
 class BPlusTreeTest {
 
     @Test
+    void createNewInitializesEmptyLeafRoot(
+            BufferPoolManager bpm,
+            FileChannelBlockManager bm,
+            FileChannelContainerManager cm
+    ) throws Exception {
+        ContainerId containerId = createIndexContainer(bm, cm);
+        IndexMetadata metadata = intIndexMetadata(containerId);
+        RecordId rid10 = fakeHeapRid(containerId, 10);
+
+        BPlusTree tree = BPlusTree.createNew(metadata, bpm);
+        tree.insert(leafKey(10, rid10));
+
+        assertThat(tree.find(leafKey(10, rid10))).isEqualTo(rid10);
+        assertThat(BPlusTreeDotDumper.dump(tree))
+                .contains("page_1 [label=\"{page=1 | LEAF | keys: 10}\"]");
+    }
+
+    @Test
     void findsKeyInLeafRoot(
             BufferPoolManager bpm,
             FileChannelBlockManager bm,
@@ -47,7 +65,7 @@ class BPlusTreeTest {
                 leafKey(20, rid20)
         );
 
-        BPlusTree tree = BPlusTree.create(metadata, bpm);
+        BPlusTree tree = BPlusTree.open(metadata, bpm);
 
         assertThat(tree.find(leafKey(20, rid20))).isEqualTo(rid20);
         assertThat(tree.find(leafKey(30, fakeHeapRid(containerId, 30)))).isNull();
@@ -74,7 +92,7 @@ class BPlusTreeTest {
         writeLeaf(bm, metadata, 3, leafKey(10, rid10), leafKey(15, fakeHeapRid(containerId, 15)));
         writeLeaf(bm, metadata, 4, leafKey(20, rid20), leafKey(30, rid30));
 
-        BPlusTree tree = BPlusTree.create(metadata, bpm);
+        BPlusTree tree = BPlusTree.open(metadata, bpm);
 
         assertThat(tree.find(leafKey(5, rid5))).isEqualTo(rid5);
         assertThat(tree.find(leafKey(10, rid10))).isEqualTo(rid10);
@@ -99,7 +117,7 @@ class BPlusTreeTest {
         writeLeaf(bm, metadata, 3, leafKey(10, fakeHeapRid(containerId, 10)));
         writeLeaf(bm, metadata, 4, leafKey(20, fakeHeapRid(containerId, 20)));
 
-        BPlusTree tree = BPlusTree.create(metadata, bpm);
+        BPlusTree tree = BPlusTree.open(metadata, bpm);
 
         assertThat(BPlusTreeDotDumper.dump(tree)).isEqualTo("""
                 digraph bplustree {
@@ -130,7 +148,7 @@ class BPlusTreeTest {
 
         writeLeaf(bm, metadata, 1, leafKey(10, rid10));
 
-        BPlusTree tree = BPlusTree.create(metadata, bpm);
+        BPlusTree tree = BPlusTree.open(metadata, bpm);
         tree.insert(leafKey(20, rid20));
 
         assertThat(tree.find(leafKey(20, rid20))).isEqualTo(rid20);
@@ -153,7 +171,7 @@ class BPlusTreeTest {
 
         writeLeaf(bm, metadata, 1, initialKeys.toArray(LeafBTreeKey[]::new));
 
-        BPlusTree tree = BPlusTree.create(metadata, bpm);
+        BPlusTree tree = BPlusTree.open(metadata, bpm);
         tree.insert(insertedKey);
 
         assertThat(tree.find(initialKeys.getFirst())).isEqualTo(initialKeys.getFirst().rid());
@@ -242,7 +260,7 @@ class BPlusTreeTest {
             assertThat(page.tupleCount()).isEqualTo(2);
         }
 
-        BPlusTree tree = BPlusTree.create(metadata, bpm);
+        BPlusTree tree = BPlusTree.open(metadata, bpm);
 
         assertThat(tree.find(leafKey(10, rid10))).isNull();
         assertThat(tree.find(leafKey(20, rid20))).isEqualTo(rid20);
@@ -270,7 +288,7 @@ class BPlusTreeTest {
         writeLeaf(bm, metadata, 3, rightTreeKey);
         writeIndexPageDirectory(bm, containerId, 1, 2, 3);
 
-        BPlusTree tree = BPlusTree.create(metadata, bpm);
+        BPlusTree tree = BPlusTree.open(metadata, bpm);
         tree.insert(insertedKey);
 
         assertThat(tree.find(initialKeys.getFirst())).isEqualTo(initialKeys.getFirst().rid());
@@ -321,7 +339,7 @@ class BPlusTreeTest {
                 existingBlocks.stream().mapToLong(Long::longValue).toArray()
         );
 
-        BPlusTree tree = BPlusTree.create(metadata, bpm);
+        BPlusTree tree = BPlusTree.open(metadata, bpm);
         tree.insert(insertedKey);
 
         assertThat(tree.find(leftmostKeys.getFirst())).isEqualTo(leftmostKeys.getFirst().rid());
