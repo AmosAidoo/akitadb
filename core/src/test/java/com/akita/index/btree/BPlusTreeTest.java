@@ -23,6 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -137,6 +138,37 @@ class BPlusTreeTest {
     }
 
     @Test
+    void splitsFullLeafRoot(
+            BufferPoolManager bpm,
+            FileChannelBlockManager bm,
+            FileChannelContainerManager cm
+    ) throws Exception {
+        ContainerId containerId = createIndexContainer(bm, cm);
+        IndexMetadata metadata = varcharIndexMetadata(containerId);
+        List<LeafBTreeKey> initialKeys = new ArrayList<>();
+        for (int i = 0; i < 16; i++) {
+            initialKeys.add(leafKey(paddedKey(i), fakeHeapRid(containerId, i)));
+        }
+        LeafBTreeKey insertedKey = leafKey(paddedKey(16), fakeHeapRid(containerId, 16));
+
+        writeLeaf(bm, metadata, 1, initialKeys.toArray(LeafBTreeKey[]::new));
+
+        BPlusTree tree = BPlusTree.create(metadata, bpm);
+        tree.insert(insertedKey);
+
+        assertThat(tree.find(initialKeys.getFirst())).isEqualTo(initialKeys.getFirst().rid());
+        assertThat(tree.find(insertedKey)).isEqualTo(insertedKey.rid());
+        assertThat(tree.find(initialKeys.getLast())).isEqualTo(initialKeys.getLast().rid());
+        assertThat(BPlusTreeDotDumper.dump(tree)).contains(
+                "page_1 [label=\"{page=1 | INTERNAL | keys: " + paddedKey(8) + "}\"]",
+                "page_2 [label=\"{page=2 | LEAF | keys: " + paddedKey(0),
+                "page_3 [label=\"{page=3 | LEAF | keys: " + paddedKey(8),
+                "page_1 -> page_2;",
+                "page_1 -> page_3;"
+        );
+    }
+
+    @Test
     void initializesAllocatedLeafPage(
             BufferPoolManager bpm,
             FileChannelBlockManager bm,
@@ -241,6 +273,16 @@ class BPlusTreeTest {
         );
     }
 
+    private static IndexMetadata varcharIndexMetadata(ContainerId containerId) {
+        return new IndexMetadata(
+                "idx_test_key",
+                "test",
+                new Schema(List.of(new ColumnMetadata("key", new AkitaType.Varchar(4096), 0, false))),
+                containerId,
+                true
+        );
+    }
+
     private static void writeLeaf(
             FileChannelBlockManager bm,
             IndexMetadata metadata,
@@ -283,6 +325,14 @@ class BPlusTreeTest {
 
     private static LeafBTreeKey leafKey(int value, RecordId rid) {
         return new LeafBTreeKey(List.of(new AkitaValue.IntVal(value)), rid);
+    }
+
+    private static LeafBTreeKey leafKey(String value, RecordId rid) {
+        return new LeafBTreeKey(List.of(new AkitaValue.VarcharVal(value)), rid);
+    }
+
+    private static String paddedKey(int value) {
+        return String.format("%02d", value) + "x".repeat(470);
     }
 
     private static InternalEntry internalKey(int value, long leftChildBlockNumber) {

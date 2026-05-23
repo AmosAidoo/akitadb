@@ -79,10 +79,46 @@ public class BPlusTree {
         }
     }
 
-    private void splitRootLeaf(LeafBTreeKey fullKey, BPlusTreePage rootLeaf) {
+    private void splitRootLeaf(LeafBTreeKey fullKey, BPlusTreePage rootLeaf) throws Exception {
         List<Tuple> tuples = rootLeaf.tuples();
         tuples.add(TupleSerializer.serializeLeaf(fullKey, indexMetadata));
         tuples.sort(leafComparator());
+        int middle = tuples.size() / 2;
+        List<Tuple> leftTuples = tuples.subList(0, middle);
+        List<Tuple> rightTuples = tuples.subList(middle, tuples.size());
+
+        PageId leftPageId = allocatePageId();
+        try (BPlusTreePage leftLeafPage = BPlusTreePage.initializeLeaf(
+                bufferPoolManager.allocatePage(leftPageId),
+                indexMetadata
+        )) {
+            leftLeafPage.replaceTuples(leftTuples);
+        }
+
+        PageId rightPageId = allocatePageId();
+        try (BPlusTreePage rightLeafPage = BPlusTreePage.initializeLeaf(
+                bufferPoolManager.allocatePage(rightPageId),
+                indexMetadata
+        )) {
+            rightLeafPage.replaceTuples(rightTuples);
+        }
+
+        LeafBTreeKey firstRightKey = LeafBTreeKey.ofLeaf(rightTuples.getFirst(), indexMetadata);
+        BTreeKey separatorKey = new BTreeKey(firstRightKey.columns());
+        Tuple rootTuple = TupleSerializer.serializeInternal(
+                separatorKey,
+                leftPageId.blockNumber(),
+                indexMetadata
+        );
+
+        PageId rootPageId = new PageId(indexMetadata.containerId(), ROOT_BLOCK_NUMBER);
+        try (BPlusTreePage rootPage = BPlusTreePage.initializeInternal(
+                bufferPoolManager.writePage(rootPageId),
+                indexMetadata,
+                rightPageId.blockNumber()
+        )) {
+            rootPage.replaceTuples(List.of(rootTuple));
+        }
     }
 
     private BPlusTreePage findLeafPageForWrite(LeafBTreeKey searchKey) throws Exception {
