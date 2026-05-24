@@ -53,4 +53,20 @@ public final class Row implements Iterable<AkitaValue> {
             }
         };
     }
+
+    @Override
+    public boolean equals(Object other) {
+        if (this == other) {
+            return true;
+        }
+        if (!(other instanceof Row row)) {
+            return false;
+        }
+        return Arrays.equals(values, row.values);
+    }
+
+    @Override
+    public int hashCode() {
+        return Arrays.hashCode(values);
+    }
 }

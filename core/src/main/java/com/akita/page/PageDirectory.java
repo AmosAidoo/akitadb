@@ -8,7 +8,6 @@ import com.akita.storage.ContainerId;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.concurrent.ExecutionException;
 
 /**
  * PageDirectory is a special page that contains metadata about pages in a database file
@@ -19,14 +18,22 @@ public class PageDirectory extends SlottedPage {
     public final static long FIRST_PAGE_DIRECTORY_NUMBER = 0;
 
     private final ContainerId containerId;
+    private final BufferPoolManager bufferPoolManager;
+    private final long blockNumber;
 
     // PageDirectory specific headers
     short nextBlockPointer;
 
-    public PageDirectory next;
+    private PageDirectory next;
 
     private PageDirectory(ContainerId containerId) {
+        this(containerId, null, FIRST_PAGE_DIRECTORY_NUMBER);
+    }
+
+    private PageDirectory(ContainerId containerId, BufferPoolManager bufferPoolManager, long blockNumber) {
         this.containerId = containerId;
+        this.bufferPoolManager = bufferPoolManager;
+        this.blockNumber = blockNumber;
         this.slots = new ArrayList<>();
     }
 
@@ -44,46 +51,63 @@ public class PageDirectory extends SlottedPage {
         parsePage(data);
     }
 
-    // TODO: Lazy load page directory
     public static PageDirectory load(
             ContainerId containerId,
             BufferPoolManager bufferPoolManager
-    ) throws ExecutionException, InterruptedException {
-        PageDirectory first;
+    ) throws Exception {
         try (ReadPageGuard pageGuard = bufferPoolManager.readPage(
                 new PageId(containerId, FIRST_PAGE_DIRECTORY_NUMBER)
         )) {
-            first = new PageDirectory(containerId);
+            PageDirectory first = new PageDirectory(
+                    containerId,
+                    bufferPoolManager,
+                    FIRST_PAGE_DIRECTORY_NUMBER
+            );
             first.parseFirstPage(pageGuard.getData());
+            return first;
         }
-
-        PageDirectory current = first;
-        long nextBlockPointer = first.nextBlockPointer;
-        while (nextBlockPointer != 0) {
-            PageId pageId = new PageId(containerId, nextBlockPointer);
-            try (ReadPageGuard pageGuard = bufferPoolManager.readPage(pageId)) {
-                ByteBuffer data = pageGuard.getData();
-                PageDirectory pageDirectory = new PageDirectory(containerId);
-                pageDirectory.parsePage(data);
-                current.next = pageDirectory;
-                current = pageDirectory;
-                nextBlockPointer = pageDirectory.nextBlockPointer;
-            }
-        }
-        return first;
     }
 
-    public PageId findPageWithTargetSpace(int targetSpace) {
+    public PageId findPageWithTargetSpace(int targetSpace) throws Exception {
         // The tuples in a page directory are of the format (blockNumber, freeSpace)
-        for (Slot slot : slots) {
-            Tuple tuple = getTuple(slot.getOffset());
-            long blockNumber = tuple.readLong();
-            int freeSpace = tuple.readInt();
-            if (freeSpace >= targetSpace) {
-                return new PageId(containerId, blockNumber);
+        PageDirectory current = this;
+        while (current != null) {
+            for (Slot slot : current.slots) {
+                Tuple tuple = current.getTuple(slot.getOffset());
+                long blockNumber = tuple.readLong();
+                int freeSpace = tuple.readInt();
+                if (freeSpace >= targetSpace) {
+                    return new PageId(containerId, blockNumber);
+                }
             }
+            current = current.next();
         }
         return null;
+    }
+
+    public PageId dataPageId(Slot slot) {
+        Tuple tuple = getTuple(slot.getOffset());
+        return new PageId(containerId, tuple.readLong());
+    }
+
+    public PageId pageId() {
+        return new PageId(containerId, blockNumber);
+    }
+
+    public PageDirectory next() throws Exception {
+        if (next != null || nextBlockPointer == 0) {
+            return next;
+        }
+        if (bufferPoolManager == null) {
+            return null;
+        }
+
+        try (ReadPageGuard pageGuard = bufferPoolManager.readPage(new PageId(containerId, nextBlockPointer))) {
+            PageDirectory loaded = new PageDirectory(containerId, bufferPoolManager, nextBlockPointer);
+            loaded.parsePage(pageGuard.getData());
+            next = loaded;
+            return next;
+        }
     }
 
     @Override
@@ -99,14 +123,18 @@ public class PageDirectory extends SlottedPage {
         return new Tuple(buf);
     }
 
-    public long getFreeSpaceForPage(PageId pageId) {
-        for (Slot slot : slots) {
-            Tuple entry = getTuple(slot.getOffset());
-            long blockNumber = entry.readLong();
-            int freeSpace = entry.readInt();
-            if (blockNumber == pageId.blockNumber()) {
-                return freeSpace;
+    public long getFreeSpaceForPage(PageId pageId) throws Exception {
+        PageDirectory current = this;
+        while (current != null) {
+            for (Slot slot : current.slots) {
+                Tuple entry = current.getTuple(slot.getOffset());
+                long blockNumber = entry.readLong();
+                int freeSpace = entry.readInt();
+                if (blockNumber == pageId.blockNumber()) {
+                    return freeSpace;
+                }
             }
+            current = current.next();
         }
         return -1;
     }
@@ -126,7 +154,11 @@ public class PageDirectory extends SlottedPage {
             if (current.nextBlockPointer > highest) {
                 highest = current.nextBlockPointer;
             }
-            current = current.next;
+            try {
+                current = current.next();
+            } catch (Exception e) {
+                throw new IllegalStateException("Unable to load next page directory", e);
+            }
         }
 
         return highest;

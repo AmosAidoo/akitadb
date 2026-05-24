@@ -357,19 +357,19 @@ Implement the initial physical operators needed for single-table reads.
 
 ### Scope
 
-- [ ] Add executor interface
-- [ ] Add `ExecutionContext`
-- [ ] Add `SeqScanExecutor`
-- [ ] Add `FilterExecutor`
-- [ ] Add `ProjectionExecutor`
+- [x] Add executor interface
+- [x] Add `ExecutionContext`
+- [x] Add `SeqScanExecutor`
+- [x] Add `FilterExecutor`
+- [x] Add `ProjectionExecutor`
 - [ ] Decide executor iteration API:
-  - [ ] `Optional<Row> next()`
+  - [x] `Optional<Row> next()`
   - [ ] or `boolean hasNext()` plus `Row next()`
-- [ ] Open heap files from table metadata
-- [ ] Iterate records in a heap file
-- [ ] Decode heap tuples using table schema
-- [ ] Apply filter predicate
-- [ ] Apply projection
+- [x] Open heap files from table metadata
+- [x] Iterate records in a heap file
+- [x] Decode heap tuples using table schema
+- [x] Apply filter predicate
+- [x] Apply projection
 
 ### Known Lower-Layer Gap
 
@@ -377,10 +377,10 @@ The heap layer may need an explicit scan/iterator API. If one does not exist yet
 
 ### Acceptance Criteria
 
-- [ ] `SeqScanExecutor` can return all rows from one table
-- [ ] `FilterExecutor` can skip rows that do not match a predicate
-- [ ] `ProjectionExecutor` returns only requested columns
-- [ ] Unit tests cover each executor independently
+- [x] `SeqScanExecutor` can return all rows from one table
+- [x] `FilterExecutor` can skip rows that do not match a predicate
+- [x] `ProjectionExecutor` returns only requested columns
+- [x] Unit tests cover each executor independently
 
 ### Suggested Labels
 
