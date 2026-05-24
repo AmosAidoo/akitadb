@@ -62,6 +62,32 @@ class QueryEngineTest {
     }
 
     @Test
+    void queryReturnsCursorForIteratorStyleRowAccess(
+            BufferPoolManager bpm,
+            FileChannelBlockManager bm,
+            FileChannelContainerManager cm
+    ) throws Exception {
+        Schema schema = usersSchema();
+        ContainerId containerId = ContainerFixture.create(bm, cm).createTable();
+        writeRows(bm, containerId, schema, List.of(
+                Row.of(new AkitaValue.IntVal(1), new AkitaValue.VarcharVal("Ada"), new AkitaValue.IntVal(42)),
+                Row.of(new AkitaValue.IntVal(2), new AkitaValue.VarcharVal("Grace"), new AkitaValue.IntVal(17))
+        ));
+
+        JsonCatalog catalog = new JsonCatalog();
+        catalog.createTable(new TableMetadata("users", containerId, schema));
+
+        try (QueryCursor cursor = new QueryEngine(catalog, bpm).query("SELECT name FROM users")) {
+            assertThat(cursor.schema().columns())
+                    .extracting(ColumnMetadata::name)
+                    .containsExactly("name");
+            assertThat(cursor.next()).contains(Row.of(new AkitaValue.VarcharVal("Ada")));
+            assertThat(cursor.next()).contains(Row.of(new AkitaValue.VarcharVal("Grace")));
+            assertThat(cursor.next()).isEmpty();
+        }
+    }
+
+    @Test
     void surfacesUnknownTableAsBindError(BufferPoolManager bpm) {
         QueryEngine queryEngine = new QueryEngine(new JsonCatalog(), bpm);
 

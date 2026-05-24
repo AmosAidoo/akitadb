@@ -406,12 +406,17 @@ This API is also the future integration point for a CLI and PostgreSQL-compatibl
 - [x] Build logical plan
 - [x] Build physical plan
 - [x] Create executor tree
-- [x] Return result schema and rows
+- [x] Return cursor with result schema and iterator-style row access
+- [x] Keep a materialized result helper for tests and simple callers
 - [x] Surface parse, bind, and execution errors cleanly
 
 ### Possible API Sketch
 
 ```java
+try (QueryCursor cursor = queryEngine.query("SELECT id, name FROM users WHERE age > 18")) {
+    Optional<Row> row = cursor.next();
+}
+
 QueryResult result = queryEngine.execute("SELECT id, name FROM users WHERE age > 18");
 List<Row> rows = result.rows();
 ```

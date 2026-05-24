@@ -42,14 +42,52 @@ public class QueryEngine {
         this.physicalPlanner = physicalPlanner;
     }
 
+    /**
+     * Executes a SQL statement and materializes the full result set in memory.
+     * <p>
+     * This is a convenience API for tests, small manual queries, and early CLI
+     * usage where collecting all rows before returning is acceptable. Long-lived
+     * callers, server integrations, and protocol adapters should prefer
+     * {@link #query(String)} so rows can be consumed incrementally.
+     *
+     * @param sql SQL text to parse, bind, plan, and execute
+     * @return result schema and all rows produced by the query
+     * @throws QueryException when parsing, binding, planning, or execution fails
+     */
     public QueryResult execute(String sql) {
+        try (QueryCursor cursor = query(sql)) {
+            return new QueryResult(cursor.schema(), collectRows(cursor));
+        }
+    }
+
+    /**
+     * Executes a SQL statement and returns a cursor over the result rows.
+     * <p>
+     * This is the primary query API for surfaces that should stream results,
+     * such as a future Akita server, PostgreSQL wire protocol adapter, or CLI
+     * mode that prints rows as they are produced. The returned cursor exposes
+     * output schema immediately and advances the executor tree one row at a
+     * time through {@link QueryCursor#next()}.
+     * <p>
+     * Callers should close the cursor when they are done. The current cursor
+     * implementation has no external resources to release yet, but keeping the
+     * lifecycle explicit gives future scans, sessions, and transactions a clear
+     * cleanup point.
+     *
+     * @param sql SQL text to parse, bind, plan, and execute
+     * @return cursor exposing result schema and iterator-style row access
+     * @throws QueryException when parsing, binding, planning, or executor setup fails;
+     *                        execution failures while reading rows are surfaced by
+     *                        {@link QueryCursor#next()}
+     */
+    public QueryCursor query(String sql) {
         try {
             Statement statement = new Parser(sql).parse();
             BoundStatement boundStatement = new Binder(catalog).bind(statement);
             LogicalPlan logicalPlan = logicalPlanner.plan(boundStatement);
             PhysicalPlan physicalPlan = physicalPlanner.plan(logicalPlan);
             Executor executor = new PhysicalExecutorFactory(new ExecutionContext(bufferPoolManager)).create(physicalPlan);
-            return new QueryResult(physicalPlan.outputSchema(), collectRows(executor));
+            return new ExecutorQueryCursor(physicalPlan.outputSchema(), executor);
         } catch (ParseException exception) {
             throw new QueryException(QueryException.Kind.PARSE, exception.getMessage(), exception);
         } catch (BindException exception) {
@@ -61,10 +99,10 @@ public class QueryEngine {
         }
     }
 
-    private static List<Row> collectRows(Executor executor) throws Exception {
+    private static List<Row> collectRows(QueryCursor cursor) {
         List<Row> rows = new ArrayList<>();
         Optional<Row> row;
-        while ((row = executor.next()).isPresent()) {
+        while ((row = cursor.next()).isPresent()) {
             rows.add(row.get());
         }
         return rows;
