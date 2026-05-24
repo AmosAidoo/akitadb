@@ -204,7 +204,7 @@ public class BufferPoolManager {
             Frame frame = pageTable.get(pageId);
             if (frame != null) {
                 replacer.recordAccess(frame.getFrameId(), pageId);
-                return WritePageGuard.create(pageId, frame, this);
+                return WritePageGuard.create(pageId, frame, replacer, this);
             }
         } finally {
             latch.unlock();
@@ -259,7 +259,7 @@ public class BufferPoolManager {
         latch.lock();
         try {
             loadPageIntoFrame(frame, pageId, data);
-            WritePageGuard guard = WritePageGuard.create(pageId, frame, this);
+            WritePageGuard guard = WritePageGuard.create(pageId, frame, replacer, this);
             if (reservation.pinnedForReuse()) {
                 frame.unpin();
             }
