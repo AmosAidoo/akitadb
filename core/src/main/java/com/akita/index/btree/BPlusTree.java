@@ -15,7 +15,6 @@ import java.util.ArrayDeque;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.List;
-import java.util.concurrent.ExecutionException;
 
 public class BPlusTree {
     private static final long ROOT_BLOCK_NUMBER = 1;
@@ -49,7 +48,7 @@ public class BPlusTree {
         return open(indexMetadata, bufferPoolManager);
     }
 
-    public static BPlusTree open(IndexMetadata indexMetadata, BufferPoolManager bufferPoolManager) throws ExecutionException, InterruptedException {
+    public static BPlusTree open(IndexMetadata indexMetadata, BufferPoolManager bufferPoolManager) throws Exception {
         ContainerId containerId = indexMetadata.containerId();
         PageDirectory pageDirectory = PageDirectory.load(
                 containerId,
@@ -452,7 +451,7 @@ public class BPlusTree {
     // Routes through an internal page using upperBound on column-only comparison.
     // upperBound gives us the first separator strictly greater than the search key,
     // which is the correct child to descend into.
-    private PageId findChildPageId(BPlusTreePage page, LeafBTreeKey searchKey) throws Exception {
+    private PageId findChildPageId(BPlusTreePage page, LeafBTreeKey searchKey) {
         int pos = upperBoundInternal(page, searchKey);
 
         if (pos == page.tupleCount()) {

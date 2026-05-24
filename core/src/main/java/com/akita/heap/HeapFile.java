@@ -14,9 +14,11 @@ import java.nio.ByteBuffer;
 
 public class HeapFile {
     final PageDirectory pageDirectory;
+    private final ContainerId containerId;
     private final BufferPoolManager bufferPoolManager;
 
-    private HeapFile(PageDirectory pageDirectory, BufferPoolManager bufferPoolManager) {
+    private HeapFile(ContainerId containerId, PageDirectory pageDirectory, BufferPoolManager bufferPoolManager) {
+        this.containerId = containerId;
         this.pageDirectory = pageDirectory;
         this.bufferPoolManager = bufferPoolManager;
     }
@@ -33,13 +35,17 @@ public class HeapFile {
                 bufferPoolManager
         );
 
-        return new HeapFile(pageDirectory, bufferPoolManager);
+        return new HeapFile(containerId, pageDirectory, bufferPoolManager);
     }
 
     public Tuple getTuple(RecordId recordId) throws Exception {
         try (HeapPage heapPage = HeapPage.create(bufferPoolManager.readPage(recordId.pageId()))) {
             return heapPage.getTuple(recordId.slotOffset());
         }
+    }
+
+    public HeapFileScan scanTuples() {
+        return new HeapFileScan(pageDirectory, bufferPoolManager);
     }
 
     /**
@@ -66,28 +72,29 @@ public class HeapFile {
         return null;
     }
 
-    private PageId findPageWithTargetSpace(int targetSpace) {
-        PageDirectory current = pageDirectory;
-
-        while (current != null) {
-            PageId pageId = current.findPageWithTargetSpace(targetSpace);
-            if (pageId != null) {
-                return pageId;
-            }
-            current = current.next;
-        }
-        return null;
+    private PageId findPageWithTargetSpace(int targetSpace) throws Exception {
+        return pageDirectory.findPageWithTargetSpace(targetSpace);
     }
 
     private void updatePageDirectoryEntry(PageId targetPage, int newFreeSpace) throws Exception {
-        // For now, only the first page directory (block 0) is handled.
-        // Multi-directory traversal is a TODO once lazy loading is wired up.
-        PageId directoryPageId = new PageId(targetPage.containerId(), PageDirectory.FIRST_PAGE_DIRECTORY_NUMBER);
+        PageDirectory current = pageDirectory;
+        while (current != null) {
+            if (updatePageDirectoryEntry(current, targetPage, newFreeSpace)) {
+                return;
+            }
+            current = current.next();
+        }
+    }
 
-        try (WritePageGuard dirGuard = bufferPoolManager.writePage(directoryPageId)) {
+    private boolean updatePageDirectoryEntry(PageDirectory directory, PageId targetPage, int newFreeSpace) throws Exception {
+        try (WritePageGuard dirGuard = bufferPoolManager.writePage(directory.pageId())) {
             ByteBuffer dirData = dirGuard.getData();
             PageDirectory dir = PageDirectory.create(targetPage.containerId());
-            dir.parseFirstPage(dirData);
+            if (directory.pageId().blockNumber() == PageDirectory.FIRST_PAGE_DIRECTORY_NUMBER) {
+                dir.parseFirstPage(dirData);
+            } else {
+                dir.parsePage(dirData);
+            }
 
             for (Slot slot : dir.getSlots()) {
                 Tuple entry = dir.getTuple(slot.getOffset());
@@ -95,9 +102,10 @@ public class HeapFile {
                 if (blockNumber == targetPage.blockNumber()) {
                     Tuple updated = PageDirectory.createTuple(blockNumber, newFreeSpace);
                     dir.updateTuple(slot, updated);
-                    break;
+                    return true;
                 }
             }
         }
+        return false;
     }
 }

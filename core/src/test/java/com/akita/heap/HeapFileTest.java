@@ -106,9 +106,74 @@ class HeapFileTest {
                 .isEqualTo(expectedFreeSpace);
     }
 
+    @Test
+    void scanTuplesReturnsCursorAcrossHeapPagesAndLazyDirectoryPages(
+            BufferPoolManager bpm,
+            FileChannelBlockManager bm,
+            FileChannelContainerManager cm
+    ) throws Exception {
+        ContainerId containerId = ContainerFixture.create(bm, cm).createTable();
+
+        SlottedPageWriter.create(bm)
+                .addPageDirectoryTuple(1, 100)
+                .writeTo(new PageId(containerId, 0), tableHeader(), nextDirectoryHeader(2));
+        SlottedPageWriter.create(bm)
+                .addPageDirectoryTuple(3, 100)
+                .writeTo(new PageId(containerId, 2), nextDirectoryHeader(0));
+        SlottedPageWriter.create(bm)
+                .addShortTuple((short) 10)
+                .writeTo(new PageId(containerId, 1), null);
+        SlottedPageWriter.create(bm)
+                .addShortTuple((short) 20)
+                .writeTo(new PageId(containerId, 3), null);
+
+        HeapFile heapFile = HeapFile.open(containerId, bpm);
+
+        try (HeapFileScan scan = heapFile.scanTuples()) {
+            assertThat(scan.next().map(Tuple::readShort)).contains((short) 10);
+            assertThat(scan.next().map(Tuple::readShort)).contains((short) 20);
+            assertThat(scan.next()).isEmpty();
+        }
+    }
+
+    @Test
+    void insertCanUseAndUpdatePageFromLazyDirectoryPage(
+            BufferPoolManager bpm,
+            FileChannelBlockManager bm,
+            FileChannelContainerManager cm
+    ) throws Exception {
+        ContainerId containerId = ContainerFixture.create(bm, cm).createTable();
+        int initialFreeSpace = BlockManager.BLOCK_SIZE - PageHeader.SIZE;
+
+        SlottedPageWriter.create(bm)
+                .addPageDirectoryTuple(1, 0)
+                .writeTo(new PageId(containerId, 0), tableHeader(), nextDirectoryHeader(2));
+        SlottedPageWriter.create(bm)
+                .addPageDirectoryTuple(3, initialFreeSpace)
+                .writeTo(new PageId(containerId, 2), nextDirectoryHeader(0));
+
+        HeapFile heapFile = HeapFile.open(containerId, bpm);
+        ByteBuffer buffer = ByteBuffer.allocate(Short.BYTES);
+        buffer.putShort((short) 99);
+
+        RecordId recordId = heapFile.insertTuple(new Tuple(buffer));
+
+        assertThat(recordId.pageId()).isEqualTo(new PageId(containerId, 3));
+        HeapFile freshHeapFile = HeapFile.open(containerId, bpm);
+        int expectedFreeSpace = initialFreeSpace - Slot.SERIALIZED_SIZE - Short.BYTES;
+        assertThat(freshHeapFile.pageDirectory.getFreeSpaceForPage(new PageId(containerId, 3)))
+                .isEqualTo(expectedFreeSpace);
+    }
+
     private static ByteBuffer tableHeader() {
         ByteBuffer buffer = ByteBuffer.allocate(HeapFileHeader.SIZE);
         HeapFileHeader.write(buffer, ObjectType.TABLE);
+        return buffer;
+    }
+
+    private static ByteBuffer nextDirectoryHeader(long nextBlockPointer) {
+        ByteBuffer buffer = ByteBuffer.allocate(Short.BYTES);
+        buffer.putShort((short) nextBlockPointer);
         return buffer;
     }
 }
