@@ -17,6 +17,14 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class Parser {
+    private static final int MIN_BINDING_POWER = 0;
+    private static final int LOGICAL_OR_BINDING_POWER = 10;
+    private static final int LOGICAL_AND_BINDING_POWER = 20;
+    private static final int COMPARISON_BINDING_POWER = 50;
+    private static final int SUM_BINDING_POWER = 70;
+    private static final int PRODUCT_BINDING_POWER = 80;
+    private static final int UNARY_BINDING_POWER = 100;
+
     private final List<Token> tokens;
     private int current = 0;
 
@@ -62,63 +70,31 @@ public class Parser {
     }
 
     private Expression expression() {
-        return or();
+        return expression(MIN_BINDING_POWER);
     }
 
-    private Expression or() {
-        Expression expression = and();
-        while (match(TokenType.OR)) {
-            expression = new BinaryExpression(expression, BinaryOperator.OR, and());
+    private Expression expression(int minimumBindingPower) {
+        Expression left = prefix();
+
+        while (true) {
+            Token operator = peek();
+            int bindingPower = infixBindingPower(operator.type());
+            if (bindingPower <= minimumBindingPower) {
+                break;
+            }
+
+            advance();
+            Expression right = expression(rightBindingPower(operator.type(), bindingPower));
+            left = new BinaryExpression(left, binaryOperator(operator), right);
         }
-        return expression;
+
+        return left;
     }
 
-    private Expression and() {
-        Expression expression = comparison();
-        while (match(TokenType.AND)) {
-            expression = new BinaryExpression(expression, BinaryOperator.AND, comparison());
-        }
-        return expression;
-    }
-
-    private Expression comparison() {
-        Expression expression = term();
-        while (match(
-                TokenType.EQUAL,
-                TokenType.NOT_EQUAL,
-                TokenType.LESS_THAN,
-                TokenType.LESS_THAN_OR_EQUAL,
-                TokenType.GREATER_THAN,
-                TokenType.GREATER_THAN_OR_EQUAL
-        )) {
-            Token operator = previous();
-            expression = new BinaryExpression(expression, binaryOperator(operator), term());
-        }
-        return expression;
-    }
-
-    private Expression term() {
-        Expression expression = factor();
-        while (match(TokenType.PLUS, TokenType.MINUS)) {
-            Token operator = previous();
-            expression = new BinaryExpression(expression, binaryOperator(operator), factor());
-        }
-        return expression;
-    }
-
-    private Expression factor() {
-        Expression expression = unary();
-        while (match(TokenType.STAR, TokenType.SLASH)) {
-            Token operator = previous();
-            expression = new BinaryExpression(expression, binaryOperator(operator), unary());
-        }
-        return expression;
-    }
-
-    private Expression unary() {
+    private Expression prefix() {
         if (match(TokenType.PLUS, TokenType.MINUS)) {
             Token operator = previous();
-            return new UnaryExpression(unaryOperator(operator), unary());
+            return new UnaryExpression(unaryOperator(operator), expression(UNARY_BINDING_POWER));
         }
         return primary();
     }
@@ -184,6 +160,33 @@ public class Parser {
             case MINUS -> UnaryOperator.MINUS;
             default -> throw new IllegalArgumentException("No unary operator for " + token.type());
         };
+    }
+
+    private int infixBindingPower(TokenType type) {
+        return switch (type) {
+            case OR -> LOGICAL_OR_BINDING_POWER;
+            case AND -> LOGICAL_AND_BINDING_POWER;
+            case EQUAL,
+                 NOT_EQUAL,
+                 LESS_THAN,
+                 LESS_THAN_OR_EQUAL,
+                 GREATER_THAN,
+                 GREATER_THAN_OR_EQUAL -> COMPARISON_BINDING_POWER;
+            case PLUS, MINUS -> SUM_BINDING_POWER;
+            case STAR, SLASH -> PRODUCT_BINDING_POWER;
+            default -> MIN_BINDING_POWER;
+        };
+    }
+
+    private int rightBindingPower(TokenType type, int bindingPower) {
+        if (isRightAssociative(type)) {
+            return bindingPower - 1;
+        }
+        return bindingPower;
+    }
+
+    private boolean isRightAssociative(TokenType type) {
+        return false;
     }
 
     private boolean match(TokenType... types) {
