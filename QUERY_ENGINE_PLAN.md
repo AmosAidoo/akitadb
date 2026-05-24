@@ -317,29 +317,29 @@ Introduce a schema-aware runtime row representation and expression evaluator for
 
 ### Scope
 
-- [ ] Add `com.akita.query.execution` package
-- [ ] Add `Row`
+- [x] Add `com.akita.query.execution` package
+- [x] Add `Row`
 - [ ] Decide whether `Row` stores:
   - [ ] `List<AkitaValue>`
-  - [ ] array of `AkitaValue`
+  - [x] array of `AkitaValue`
   - [ ] another compact representation
-- [ ] Add expression evaluator for bound expressions
-- [ ] Evaluate bound column references by ordinal position
-- [ ] Evaluate literals
-- [ ] Evaluate comparison operators
-- [ ] Evaluate boolean `AND` / `OR`
-- [ ] Define null behavior or explicitly reject null expressions for milestone 1
-- [ ] Add schema-aware tuple decoder:
-  - [ ] `Tuple` + `Schema` -> `Row`
-- [ ] Add schema-aware tuple encoder if needed for tests:
-  - [ ] `Row` + `Schema` -> `Tuple`
+- [x] Add expression evaluator for bound expressions
+- [x] Evaluate bound column references by ordinal position
+- [x] Evaluate literals
+- [x] Evaluate comparison operators
+- [x] Evaluate boolean `AND` / `OR`
+- [x] Define null behavior or explicitly reject null expressions for milestone 1
+- [x] Add schema-aware tuple decoder:
+  - [x] `Tuple` + `Schema` -> `Row`
+- [x] Add schema-aware tuple encoder if needed for tests:
+  - [x] `Row` + `Schema` -> `Tuple`
 
 ### Acceptance Criteria
 
-- [ ] Can decode a heap tuple into a row using schema metadata
-- [ ] Can evaluate `age > 18` against a row
-- [ ] Can evaluate projection expressions against a row
-- [ ] Unit tests cover row decoding and expression evaluation
+- [x] Can decode a heap tuple into a row using schema metadata
+- [x] Can evaluate `age > 18` against a row
+- [x] Can evaluate projection expressions against a row
+- [x] Unit tests cover row decoding and expression evaluation
 
 ### Suggested Labels
 
