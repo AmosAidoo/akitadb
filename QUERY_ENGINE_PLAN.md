@@ -144,18 +144,18 @@ Build a hand-written parser that converts lexer tokens into the AST model.
 
 ### Scope
 
-- [ ] Add `Parser`
-- [ ] Parse `SELECT` statements
-- [ ] Parse comma-separated select lists
-- [ ] Parse one table in `FROM`
-- [ ] Parse optional `WHERE`
-- [ ] Parse identifiers and qualified identifiers
-- [ ] Parse literals
-- [ ] Parse expression parentheses
-- [ ] Parse comparison operators
-- [ ] Parse boolean `AND` / `OR`
-- [ ] Add Pratt-style expression parsing or equivalent precedence handling
-- [ ] Produce useful parse errors with source positions
+- [x] Add `Parser`
+- [x] Parse `SELECT` statements
+- [x] Parse comma-separated select lists
+- [x] Parse one table in `FROM`
+- [x] Parse optional `WHERE`
+- [x] Parse identifiers and qualified identifiers
+- [x] Parse literals
+- [x] Parse expression parentheses
+- [x] Parse comparison operators
+- [x] Parse boolean `AND` / `OR`
+- [x] Add Pratt-style expression parsing or equivalent precedence handling
+- [x] Produce useful parse errors with source positions
 
 ### Initial Grammar Sketch
 
@@ -170,11 +170,11 @@ expression     := parsed with precedence
 
 ### Acceptance Criteria
 
-- [ ] Parser accepts `SELECT id FROM users`
-- [ ] Parser accepts `SELECT id, name FROM users WHERE age > 18`
-- [ ] Parser handles expression precedence correctly
-- [ ] Parser rejects invalid SQL with clear errors
-- [ ] Unit tests cover successful parsing and parse failures
+- [x] Parser accepts `SELECT id FROM users`
+- [x] Parser accepts `SELECT id, name FROM users WHERE age > 18`
+- [x] Parser handles expression precedence correctly
+- [x] Parser rejects invalid SQL with clear errors
+- [x] Unit tests cover successful parsing and parse failures
 
 ### Suggested Labels
 
