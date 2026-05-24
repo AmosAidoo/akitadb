@@ -236,13 +236,14 @@ Create the initial logical plan representation produced by the binder or by a bi
 
 ### Scope
 
-- [ ] Add `com.akita.query.logical` package
-- [ ] Add `LogicalPlan`
-- [ ] Add `LogicalScan`
-- [ ] Add `LogicalFilter`
-- [ ] Add `LogicalProjection`
-- [ ] Represent output schema for logical plans
-- [ ] Store bound expressions in filter and projection nodes
+- [x] Add `com.akita.query.logical` package
+- [x] Add `LogicalPlan`
+- [x] Add `LogicalScan`
+- [x] Add `LogicalFilter`
+- [x] Add `LogicalProjection`
+- [x] Represent output schema for logical plans
+- [x] Store bound expressions in filter and projection nodes
+- [x] Add a debug printer for logical plans
 
 ### Initial Plan Shape
 
@@ -261,10 +262,10 @@ Projection
 
 ### Acceptance Criteria
 
-- [ ] Binder or planner can produce a logical scan for `FROM users`
-- [ ] Binder or planner can produce a logical filter for `WHERE age > 18`
-- [ ] Binder or planner can produce a logical projection for `SELECT id, name`
-- [ ] Unit tests assert the logical plan shape for basic queries
+- [x] Binder or planner can produce a logical scan for `FROM users`
+- [x] Binder or planner can produce a logical filter for `WHERE age > 18`
+- [x] Binder or planner can produce a logical projection for `SELECT id, name`
+- [x] Unit tests assert the logical plan shape for basic queries
 
 ### Suggested Labels
 
