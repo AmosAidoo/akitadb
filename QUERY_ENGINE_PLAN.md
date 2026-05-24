@@ -395,23 +395,25 @@ The heap layer may need an explicit scan/iterator API. If one does not exist yet
 ### Goal
 
 Add a small API that wires the query pipeline together for tests and early manual usage.
+This API is also the future integration point for a CLI and PostgreSQL-compatible surfaces.
 
 ### Scope
 
-- [ ] Add query engine facade or service
-- [ ] Accept SQL string input
-- [ ] Run lexer/parser
-- [ ] Run binder
-- [ ] Build logical plan
-- [ ] Build physical plan
-- [ ] Create executor tree
-- [ ] Return result rows
-- [ ] Surface parse, bind, and execution errors cleanly
+- [x] Add query engine facade or service
+- [x] Accept SQL string input
+- [x] Run lexer/parser
+- [x] Run binder
+- [x] Build logical plan
+- [x] Build physical plan
+- [x] Create executor tree
+- [x] Return result schema and rows
+- [x] Surface parse, bind, and execution errors cleanly
 
 ### Possible API Sketch
 
 ```java
-List<Row> rows = queryEngine.execute("SELECT id, name FROM users WHERE age > 18");
+QueryResult result = queryEngine.execute("SELECT id, name FROM users WHERE age > 18");
+List<Row> rows = result.rows();
 ```
 
 ### Acceptance Criteria
@@ -426,6 +428,36 @@ List<Row> rows = queryEngine.execute("SELECT id, name FROM users WHERE age > 18"
 - `query-engine`
 - `api`
 - `integration`
+
+---
+
+## Issue 9a: Add Initial Query CLI
+
+### Goal
+
+Expose the query facade through a small command-line entry point for manual experimentation.
+
+The CLI should depend on the query facade rather than wiring parser, binder, planner, or executor components itself.
+
+### Scope
+
+- [ ] Add a command entry point for executing one SQL string
+- [ ] Print column names and rows in a readable format
+- [ ] Convert query facade errors into clear terminal messages
+- [ ] Keep catalog/storage bootstrapping explicit and simple for early usage
+- [ ] Document the temporary limitations
+
+### Possible Usage Sketch
+
+```bash
+akita "SELECT id, name FROM users WHERE age > 18;"
+```
+
+### Suggested Labels
+
+- `query-engine`
+- `cli`
+- `developer-experience`
 
 ---
 
@@ -530,3 +562,16 @@ These should become separate issues only after milestone 1 is working.
 - [x] In-memory test catalog
 - [x] Catalog persistence improvements
 - [ ] Table statistics storage
+
+### PostgreSQL Compatibility Track
+
+These should stay interface-focused: Akita keeps its own internals while gradually exposing PostgreSQL-shaped entry points.
+
+- [ ] Map Akita result metadata to PostgreSQL-style column descriptions
+- [ ] Add PostgreSQL-friendly type names for supported Akita types
+- [ ] Expand SQL compatibility where it helps `psql` workflows
+- [ ] Add a simple server process around the query facade
+- [ ] Implement a minimal PostgreSQL wire protocol startup/query flow
+- [ ] Support simple query protocol enough for `psql` smoke tests
+- [ ] Add protocol-level error responses backed by query facade errors
+- [ ] Document supported and unsupported PostgreSQL behavior
