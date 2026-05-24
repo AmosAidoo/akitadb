@@ -102,31 +102,31 @@ Introduce a syntactic AST for the first SQL subset. The AST should not know anyt
 
 ### Scope
 
-- [ ] Add `com.akita.sql.ast` package
-- [ ] Add statement model:
-  - [ ] `Statement`
-  - [ ] `SelectStatement`
-- [ ] Add select-list model:
-  - [ ] `SelectItem`
-  - [ ] optional alias field if useful
-- [ ] Add table reference model:
-  - [ ] `TableRef`
-  - [ ] optional alias field if useful
-- [ ] Add expression model:
-  - [ ] `Expression`
-  - [ ] `IdentifierExpression`
-  - [ ] `LiteralExpression`
-  - [ ] `BinaryExpression`
-  - [ ] `UnaryExpression` if needed
-- [ ] Represent qualified names, for example `users.id`
-- [ ] Keep AST nodes immutable where practical
+- [x] Add `com.akita.sql.ast` package
+- [x] Add statement model:
+  - [x] `Statement`
+  - [x] `SelectStatement`
+- [x] Add select-list model:
+  - [x] `SelectItem`
+  - [x] optional alias field if useful
+- [x] Add table reference model:
+  - [x] `TableRef`
+  - [x] optional alias field if useful
+- [x] Add expression model:
+  - [x] `Expression`
+  - [x] `IdentifierExpression`
+  - [x] `LiteralExpression`
+  - [x] `BinaryExpression`
+  - [x] `UnaryExpression` if needed
+- [x] Represent qualified names, for example `users.id`
+- [x] Keep AST nodes immutable where practical
 
 ### Acceptance Criteria
 
-- [ ] AST can represent `SELECT id, name FROM users`
-- [ ] AST can represent `SELECT id FROM users WHERE age > 18`
-- [ ] AST can represent nested expression grouping such as `(age + 1) > 18`
-- [ ] AST contains no binder, catalog, heap, or execution dependencies
+- [x] AST can represent `SELECT id, name FROM users`
+- [x] AST can represent `SELECT id FROM users WHERE age > 18`
+- [x] AST can represent nested expression grouping such as `(age + 1) > 18`
+- [x] AST contains no binder, catalog, heap, or execution dependencies
 
 ### Suggested Labels
 
