@@ -192,33 +192,33 @@ Resolve SQL names against the system catalog and convert syntactic AST reference
 
 ### Scope
 
-- [ ] Add `com.akita.query.bind` package
-- [ ] Add binder entry point that consumes:
-  - [ ] AST `Statement`
-  - [ ] `Catalog`
-- [ ] Add bound statement or bound query model
-- [ ] Add bound expression model:
-  - [ ] bound column references
-  - [ ] bound literals
-  - [ ] bound binary expressions
-- [ ] Resolve table names through `Catalog`
-- [ ] Resolve column names through `TableMetadata.schema()`
-- [ ] Track column ordinal position from `ColumnMetadata`
-- [ ] Attach `AkitaType` to bound expressions where possible
-- [ ] Reject missing tables
-- [ ] Reject missing columns
+- [x] Add `com.akita.query.bind` package
+- [x] Add binder entry point that consumes:
+  - [x] AST `Statement`
+  - [x] `Catalog`
+- [x] Add bound statement or bound query model
+- [x] Add bound expression model:
+  - [x] bound column references
+  - [x] bound literals
+  - [x] bound binary expressions
+- [x] Resolve table names through `Catalog`
+- [x] Resolve column names through `TableMetadata.schema()`
+- [x] Track column ordinal position from `ColumnMetadata`
+- [x] Attach `AkitaType` to bound expressions where possible
+- [x] Reject missing tables
+- [x] Reject missing columns
 - [ ] Reject ambiguous column references once aliases or multiple scopes are introduced
-- [ ] Validate that `WHERE` resolves to a boolean expression
-- [ ] Add a simple binding scope abstraction even if only one scope is used initially
+- [x] Validate that `WHERE` resolves to a boolean expression
+- [x] Add a simple binding scope abstraction even if only one scope is used initially
 
 ### Acceptance Criteria
 
-- [ ] Binder resolves `SELECT id FROM users`
-- [ ] Binder resolves `SELECT id FROM users WHERE age > 18`
-- [ ] Binder reports a clear error for unknown table names
-- [ ] Binder reports a clear error for unknown column names
-- [ ] Binder output is independent of the physical executor
-- [ ] Unit tests use a small in-memory catalog or test catalog
+- [x] Binder resolves `SELECT id FROM users`
+- [x] Binder resolves `SELECT id FROM users WHERE age > 18`
+- [x] Binder reports a clear error for unknown table names
+- [x] Binder reports a clear error for unknown column names
+- [x] Binder output is independent of the physical executor
+- [x] Unit tests use a small in-memory catalog or test catalog
 
 ### Suggested Labels
 
@@ -526,6 +526,6 @@ These should become separate issues only after milestone 1 is working.
 - [ ] Heap file page allocation when no page has enough free space
 - [ ] Schema-aware tuple serialization
 - [ ] Schema-aware tuple deserialization
-- [ ] In-memory test catalog
-- [ ] Catalog persistence improvements
+- [x] In-memory test catalog
+- [x] Catalog persistence improvements
 - [ ] Table statistics storage
