@@ -3,6 +3,7 @@ package com.akita.buffer;
 import java.nio.ByteBuffer;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
@@ -16,6 +17,7 @@ public class Frame {
     private final int FRAME_SIZE = 8192;
     private final FrameId frameId;
     private volatile boolean isDirty = false;
+    private final AtomicLong dirtyVersion = new AtomicLong();
     private volatile Future<?> pendingWrite;
     private final AtomicInteger pinCount = new AtomicInteger(0);
     private final ByteBuffer data = ByteBuffer.allocate(FRAME_SIZE);
@@ -52,8 +54,23 @@ public class Frame {
         this.isDirty = isDirty;
     }
 
+    public void markDirty() {
+        dirtyVersion.incrementAndGet();
+        isDirty = true;
+    }
+
     public boolean getIsDirty() {
         return isDirty;
+    }
+
+    public long getDirtyVersion() {
+        return dirtyVersion.get();
+    }
+
+    public void markClean(long cleanVersion) {
+        if (dirtyVersion.get() == cleanVersion) {
+            isDirty = false;
+        }
     }
 
     public ByteBuffer getReadOnlyData() {

@@ -33,17 +33,9 @@ public class WritePageGuard implements PageGuard {
         return frame.getData();
     }
 
-    public boolean isDirty() {
-        return frame.getIsDirty();
-    }
-
-    public void flush() {
-        bufferPoolManager.flushPage(pageId);
-    }
-
     @Override
     public void close() {
-        frame.setIsDirty(true);
+        frame.markDirty();
         frame.unpin();
         frame.getWriteLatch().unlock();
         bufferPoolManager.onPageUnpinned(pageId);
