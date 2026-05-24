@@ -27,9 +27,7 @@ public class WriteRequest implements Runnable {
                 blockManager.writeBlock(pageId.containerId(), pageId.blockNumber(), buffer);
             }
         } catch (IOException e) {
-            // What should I do here?
-            e.printStackTrace();
+            throw new IllegalStateException("Unable to write page: " + pageId, e);
         }
-
     }
 }

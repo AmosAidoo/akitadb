@@ -10,8 +10,6 @@ import java.util.LinkedList;
 import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
@@ -21,7 +19,6 @@ import java.util.concurrent.locks.ReentrantLock;
  * device with the {@link DiskScheduler}
  */
 public class BufferPoolManager {
-    private final ExecutorService callbackExecutor = Executors.newSingleThreadExecutor();
     private final ReentrantLock latch = new ReentrantLock();
     private final Condition frameAvailable = latch.newCondition();
     private final DiskScheduler diskScheduler;
@@ -42,6 +39,8 @@ public class BufferPoolManager {
         return new BufferPoolManager(diskScheduler, replacer, frames, pageTable);
     }
 
+    private record FrameReservation(FrameId frameId, boolean pinnedForReuse) {}
+
     private void loadPageIntoFrame(Frame frame, PageId pageId, ByteBuffer data) {
         frame.getData().put(data);
         frame.setPageId(pageId);
@@ -50,19 +49,103 @@ public class BufferPoolManager {
         replacer.recordAccess(frame.getFrameId(), pageId);
     }
 
+    private ByteBuffer snapshot(Frame frame) {
+        ByteBuffer source = frame.getData();
+        ByteBuffer copy = ByteBuffer.allocate(BlockManager.BLOCK_SIZE);
+        copy.put(source);
+        copy.clear();
+        return copy;
+    }
+
+    private record PageSnapshot(PageId pageId, ByteBuffer data, long dirtyVersion) {}
+
+    private PageSnapshot snapshotDirtyPage(Frame frame) throws ExecutionException, InterruptedException {
+        frame.getWriteLatch().lock();
+        try {
+            Future<?> pendingWrite = frame.getPendingWrite();
+            if (pendingWrite != null) {
+                pendingWrite.get();
+                frame.setPendingWrite(null);
+            }
+
+            if (!frame.getIsDirty()) {
+                return null;
+            }
+
+            return new PageSnapshot(frame.getPageId(), snapshot(frame), frame.getDirtyVersion());
+        } finally {
+            frame.getWriteLatch().unlock();
+        }
+    }
+
+    private void markSnapshotFlushed(Frame frame, long dirtyVersion) {
+        frame.getWriteLatch().lock();
+        try {
+            frame.markClean(dirtyVersion);
+            frame.setPendingWrite(null);
+        } finally {
+            frame.getWriteLatch().unlock();
+        }
+    }
+
+    private void flushSnapshot(Frame frame, PageSnapshot snapshot) throws ExecutionException, InterruptedException {
+        if (snapshot == null) {
+            return;
+        }
+
+        Future<?> writeFuture = diskScheduler.schedulePageWrite(snapshot.pageId(), snapshot.data());
+        frame.getWriteLatch().lock();
+        try {
+            frame.setPendingWrite(writeFuture);
+        } finally {
+            frame.getWriteLatch().unlock();
+        }
+        writeFuture.get();
+        markSnapshotFlushed(frame, snapshot.dirtyVersion());
+    }
+
+    private void prepareFrameForReuse(Frame frame) throws ExecutionException, InterruptedException {
+        PageId oldPageId = frame.getPageId();
+        if (oldPageId == null) {
+            return;
+        }
+
+        PageSnapshot snapshot = snapshotDirtyPage(frame);
+        flushSnapshot(frame, snapshot);
+
+        frame.getWriteLatch().lock();
+        try {
+            Future<?> pendingWrite = frame.getPendingWrite();
+            if (pendingWrite != null) {
+                pendingWrite.get();
+                frame.setPendingWrite(null);
+            }
+
+            pageTable.remove(oldPageId);
+            frame.setPageId(null);
+        } finally {
+            frame.getWriteLatch().unlock();
+        }
+    }
+
     // Extracted helper: finds a free frameId or waits until one becomes available.
     // Must be called with latch held. Uses a while loop around await() — this is
     // the standard pattern because await() can wake spuriously (OS-level behaviour),
     // so you always re-check the condition after waking up.
-    private FrameId acquireFrameId() throws InterruptedException {
+    private FrameReservation acquireFrameId() throws InterruptedException {
         while (true) {
             if (!freeFrames.isEmpty()) {
-                return freeFrames.remove().getFrameId();
+                return new FrameReservation(freeFrames.remove().getFrameId(), false);
             }
 
             FrameId frameId = replacer.evict();
             if (frameId != null) {
-                return frameId;
+                frames.get(frameId).pin();
+                PageId oldPageId = frames.get(frameId).getPageId();
+                if (oldPageId != null) {
+                    pageTable.remove(oldPageId);
+                }
+                return new FrameReservation(frameId, true);
             }
 
             // All frames are pinned. Release the latch and sleep until
@@ -87,23 +170,29 @@ public class BufferPoolManager {
         // Page not in pool — we need to find a frame, read from disk, then load it.
         // acquireFrameId() blocks here (without spinning) if no frame is available.
         latch.lock();
-        FrameId frameId;
+        FrameReservation reservation;
         try {
-            frameId = acquireFrameId();
+            reservation = acquireFrameId();
         } finally {
             latch.unlock();
         }
 
         // Disk I/O happens outside the latch — we don't want to hold the lock
         // while waiting on disk since that would block all other threads.
+        Frame frame = frames.get(reservation.frameId());
+        prepareFrameForReuse(frame);
+
         Future<ByteBuffer> future = diskScheduler.schedulePageRead(pageId);
         ByteBuffer data = future.get();
 
         latch.lock();
         try {
-            Frame frame = frames.get(frameId);
             loadPageIntoFrame(frame, pageId, data);
-            return ReadPageGuard.create(pageId, frame, replacer, this);
+            ReadPageGuard guard = ReadPageGuard.create(pageId, frame, replacer, this);
+            if (reservation.pinnedForReuse()) {
+                frame.unpin();
+            }
+            return guard;
         } finally {
             latch.unlock();
         }
@@ -115,31 +204,27 @@ public class BufferPoolManager {
             Frame frame = pageTable.get(pageId);
             if (frame != null) {
                 replacer.recordAccess(frame.getFrameId(), pageId);
-                return WritePageGuard.create(pageId, frame, this);
+                return WritePageGuard.create(pageId, frame, replacer, this);
             }
         } finally {
             latch.unlock();
         }
 
         latch.lock();
-        FrameId frameId;
+        FrameReservation reservation;
         try {
-            frameId = acquireFrameId();
+            reservation = acquireFrameId();
         } finally {
             latch.unlock();
         }
+
+        Frame frame = frames.get(reservation.frameId());
+        prepareFrameForReuse(frame);
 
         Future<ByteBuffer> future = diskScheduler.schedulePageRead(pageId);
         ByteBuffer data = future.get();
 
-        latch.lock();
-        try {
-            Frame frame = frames.get(frameId);
-            loadPageIntoFrame(frame, pageId, data);
-            return WritePageGuard.create(pageId, frame, this);
-        } finally {
-            latch.unlock();
-        }
+        return getWritePageGuard(pageId, reservation, frame, data);
     }
 
     public WritePageGuard allocatePage(PageId pageId) throws InterruptedException, ExecutionException {
@@ -153,22 +238,32 @@ public class BufferPoolManager {
         }
 
         latch.lock();
-        FrameId frameId;
+        FrameReservation reservation;
         try {
-            frameId = acquireFrameId();
+            reservation = acquireFrameId();
         } finally {
             latch.unlock();
         }
 
         diskScheduler.schedulePageAllocate(pageId).get();
 
+        Frame frame = frames.get(reservation.frameId());
+        prepareFrameForReuse(frame);
+
         ByteBuffer data = ByteBuffer.allocate(BlockManager.BLOCK_SIZE);
 
+        return getWritePageGuard(pageId, reservation, frame, data);
+    }
+
+    private WritePageGuard getWritePageGuard(PageId pageId, FrameReservation reservation, Frame frame, ByteBuffer data) {
         latch.lock();
         try {
-            Frame frame = frames.get(frameId);
             loadPageIntoFrame(frame, pageId, data);
-            return WritePageGuard.create(pageId, frame, this);
+            WritePageGuard guard = WritePageGuard.create(pageId, frame, replacer, this);
+            if (reservation.pinnedForReuse()) {
+                frame.unpin();
+            }
+            return guard;
         } finally {
             latch.unlock();
         }
@@ -187,27 +282,44 @@ public class BufferPoolManager {
         }
 
         frame.getWriteLatch().lock();
+        PageSnapshot snapshot;
         try {
-            if (frame.getIsDirty() &&
-                    (frame.getPendingWrite() == null || frame.getPendingWrite().isDone())) {
-
-                Future<?> writeFuture = diskScheduler.schedulePageWrite(pageId, frame.getData());
-                frame.setPendingWrite(writeFuture);
-
-                callbackExecutor.submit(() -> {
-                    try {
-                        writeFuture.get();
-                        frame.setIsDirty(false);
-                        frame.setPendingWrite(null);
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
-                });
+            Future<?> pendingWrite = frame.getPendingWrite();
+            if (pendingWrite != null) {
+                pendingWrite.get();
+                frame.setPendingWrite(null);
             }
+
+            if (!frame.getIsDirty()) {
+                return true;
+            }
+            snapshot = new PageSnapshot(pageId, snapshot(frame), frame.getDirtyVersion());
+        } catch (ExecutionException | InterruptedException e) {
+            throw new IllegalStateException("Unable to flush page: " + pageId, e);
         } finally {
             frame.getWriteLatch().unlock();
         }
+
+        try {
+            flushSnapshot(frame, snapshot);
+        } catch (ExecutionException | InterruptedException e) {
+            throw new IllegalStateException("Unable to flush page: " + pageId, e);
+        }
         return true;
+    }
+
+    public void flushAllPages() {
+        PageId[] pageIds;
+        latch.lock();
+        try {
+            pageIds = pageTable.keySet().toArray(PageId[]::new);
+        } finally {
+            latch.unlock();
+        }
+
+        for (PageId pageId : pageIds) {
+            flushPage(pageId);
+        }
     }
 
     public Integer getPinCount(PageId pageId) {
@@ -236,6 +348,8 @@ public class BufferPoolManager {
             pageTable.remove(pageId);
             freeFrames.add(frame);
             replacer.remove(frame.getFrameId());
+            frame.setPageId(null);
+            frame.setIsDirty(false);
 
             // A frame just became free — wake any threads waiting in acquireFrameId()
             frameAvailable.signalAll();
