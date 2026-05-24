@@ -282,24 +282,24 @@ Create an optimizer boundary that converts logical plans into physical plans. Fo
 
 ### Scope
 
-- [ ] Add `com.akita.query.optimizer` package
-- [ ] Add optimizer or physical planner entry point
-- [ ] Add `com.akita.query.physical` package
-- [ ] Add `PhysicalPlan`
-- [ ] Add `SeqScanPlan`
-- [ ] Add `FilterPlan`
-- [ ] Add `ProjectionPlan`
-- [ ] Convert:
-  - [ ] `LogicalScan` to `SeqScanPlan`
-  - [ ] `LogicalFilter` to `FilterPlan`
-  - [ ] `LogicalProjection` to `ProjectionPlan`
-- [ ] Keep hooks open for future rule-based and cost-based optimization
+- [x] Add `com.akita.query.optimizer` package
+- [x] Add optimizer or physical planner entry point
+- [x] Add `com.akita.query.physical` package
+- [x] Add `PhysicalPlan`
+- [x] Add `SeqScanPlan`
+- [x] Add `FilterPlan`
+- [x] Add `ProjectionPlan`
+- [x] Convert:
+  - [x] `LogicalScan` to `SeqScanPlan`
+  - [x] `LogicalFilter` to `FilterPlan`
+  - [x] `LogicalProjection` to `ProjectionPlan`
+- [x] Keep hooks open for future rule-based and cost-based optimization
 
 ### Acceptance Criteria
 
-- [ ] Logical plan can be converted to physical plan
-- [ ] Physical plan preserves table metadata, output schema, and bound expressions
-- [ ] Unit tests assert physical plan shape for basic queries
+- [x] Logical plan can be converted to physical plan
+- [x] Physical plan preserves table metadata, output schema, and bound expressions
+- [x] Unit tests assert physical plan shape for basic queries
 
 ### Suggested Labels
 
