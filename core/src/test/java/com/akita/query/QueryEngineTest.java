@@ -8,8 +8,10 @@ import com.akita.datatype.AkitaType;
 import com.akita.datatype.AkitaValue;
 import com.akita.datatype.ColumnMetadata;
 import com.akita.datatype.Schema;
+import com.akita.heap.HeapFile;
 import com.akita.heap.HeapFileHeader;
 import com.akita.heap.ObjectType;
+import com.akita.page.Tuple;
 import com.akita.page.PageHeader;
 import com.akita.query.execution.Row;
 import com.akita.query.execution.RowTupleCodec;
@@ -40,7 +42,7 @@ class QueryEngineTest {
     ) throws Exception {
         Schema schema = usersSchema();
         ContainerId containerId = ContainerFixture.create(bm, cm).createTable();
-        writeRows(bm, containerId, schema, List.of(
+        writeRows(bpm, bm, containerId, schema, List.of(
                 Row.of(new AkitaValue.IntVal(1), new AkitaValue.VarcharVal("Ada"), new AkitaValue.IntVal(42)),
                 Row.of(new AkitaValue.IntVal(2), new AkitaValue.VarcharVal("Grace"), new AkitaValue.IntVal(17)),
                 Row.of(new AkitaValue.IntVal(3), new AkitaValue.VarcharVal("Edsger"), new AkitaValue.IntVal(32))
@@ -69,7 +71,7 @@ class QueryEngineTest {
     ) throws Exception {
         Schema schema = usersSchema();
         ContainerId containerId = ContainerFixture.create(bm, cm).createTable();
-        writeRows(bm, containerId, schema, List.of(
+        writeRows(bpm, bm, containerId, schema, List.of(
                 Row.of(new AkitaValue.IntVal(1), new AkitaValue.VarcharVal("Ada"), new AkitaValue.IntVal(42)),
                 Row.of(new AkitaValue.IntVal(2), new AkitaValue.VarcharVal("Grace"), new AkitaValue.IntVal(17))
         ));
@@ -123,20 +125,22 @@ class QueryEngineTest {
     }
 
     private static void writeRows(
+            BufferPoolManager bpm,
             FileChannelBlockManager bm,
             ContainerId containerId,
             Schema schema,
             List<Row> rows
     ) throws Exception {
-        RowTupleCodec codec = new RowTupleCodec();
-        SlottedPageWriter writer = SlottedPageWriter.create(bm);
-        for (Row row : rows) {
-            writer.addTuple(codec.encode(row, schema));
-        }
-        writer.writeTo(new PageId(containerId, 1), null);
         SlottedPageWriter.create(bm)
                 .addPageDirectoryTuple(1, BlockManager.BLOCK_SIZE - PageHeader.SIZE)
                 .writeTo(new PageId(containerId, 0), tableHeader(), pageDirectoryHeader());
+
+        RowTupleCodec codec = new RowTupleCodec();
+        HeapFile heapFile = HeapFile.open(containerId, bpm);
+        for (Row row : rows) {
+            Tuple tuple = codec.encode(row, schema);
+            heapFile.insertTuple(tuple);
+        }
     }
 
     private static Schema usersSchema() {

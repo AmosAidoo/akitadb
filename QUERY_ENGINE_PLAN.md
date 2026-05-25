@@ -476,25 +476,29 @@ Prove the first complete vertical slice works through real Akita components.
 
 ### Scope
 
-- [ ] Create a test table schema
-- [ ] Register table metadata in a catalog
-- [ ] Create or open a heap file for the table
-- [ ] Insert several tuples
-- [ ] Execute:
+- [x] Create a test table schema
+- [x] Register table metadata in a catalog
+- [x] Create or open a heap file for the table
+- [x] Insert several tuples
+- [x] Execute:
 
 ```sql
 SELECT id, name FROM users WHERE age > 18;
 ```
 
-- [ ] Assert only matching rows are returned
-- [ ] Assert projected columns are correct
-- [ ] Assert non-projected columns are not returned
+- [x] Assert only matching rows are returned
+- [x] Assert projected columns are correct
+- [x] Assert non-projected columns are not returned
 
 ### Acceptance Criteria
 
-- [ ] Test exercises parser, binder, planner, optimizer boundary, executor, heap, buffer pool, and catalog together
-- [ ] Test passes reliably
-- [ ] Test documents any temporary limitations
+- [x] Test exercises parser, binder, planner, optimizer boundary, executor, heap, buffer pool, and catalog together
+- [x] Test passes reliably
+- [x] Test documents any temporary limitations
+
+Current limitation: heap-page availability is still bootstrapped explicitly in
+the test setup because heap-file growth when no page has free space is not
+implemented yet.
 
 ### Suggested Labels
 
