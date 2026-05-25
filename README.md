@@ -20,8 +20,32 @@ The repository is a Maven multi-module project:
 ```text
 akita-parent
 |-- core/        engine code and tests
+|-- cli/         embedded command-line shell
 `-- benchmarks/  JMH-style microbenchmarks for hot internals
 ```
+
+## CLI
+
+The initial embedded CLI opens a local database directory, creating it when it
+does not exist. With one argument it starts an interactive shell:
+
+```bash
+./mvnw -pl cli -am -DskipTests package
+java -jar cli/target/akita.jar ./akita-data
+```
+
+Inside the shell, enter SQL terminated by `;`, or use `.exit` / `.quit`.
+
+You can also run a single SQL string:
+
+```bash
+java -jar cli/target/akita.jar ./akita-data "SELECT id FROM users;"
+```
+
+Current limitations: this is a direct embedded CLI, not a server or PostgreSQL
+wire-protocol endpoint. It supports the SQL surface currently implemented by
+`QueryEngine`, and database initialization only creates the directory plus an
+empty `catalog.json`.
 
 ## Engine Map
 

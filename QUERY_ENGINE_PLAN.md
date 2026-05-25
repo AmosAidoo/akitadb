@@ -446,16 +446,18 @@ The CLI should depend on the query facade rather than wiring parser, binder, pla
 
 ### Scope
 
-- [ ] Add a command entry point for executing one SQL string
-- [ ] Print column names and rows in a readable format
-- [ ] Convert query facade errors into clear terminal messages
-- [ ] Keep catalog/storage bootstrapping explicit and simple for early usage
-- [ ] Document the temporary limitations
+- [x] Add a command entry point for executing one SQL string
+- [x] Add an interactive shell that opens or initializes a database directory
+- [x] Print column names and rows in a readable format
+- [x] Convert query facade errors into clear terminal messages
+- [x] Keep catalog/storage bootstrapping explicit and simple for early usage
+- [x] Document the temporary limitations
 
 ### Possible Usage Sketch
 
 ```bash
-akita "SELECT id, name FROM users WHERE age > 18;"
+akita ./akita-data
+akita ./akita-data "SELECT id, name FROM users WHERE age > 18;"
 ```
 
 ### Suggested Labels
