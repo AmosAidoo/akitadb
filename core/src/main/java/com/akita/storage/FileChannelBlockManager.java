@@ -20,7 +20,7 @@ public class FileChannelBlockManager implements BlockManager {
 
     @Override
     public void allocateBlock(ContainerId containerId, long blockNumber) throws IOException {
-        VFSFile file = vfs.open(containerId, OpenMode.WRITE);
+        VFSFile file = vfs.open(containerId, OpenMode.WRITE, OpenMode.CREATE);
         long numberOfBlocks = file.size() / BLOCK_SIZE;
 
         ByteBuffer buffer = ByteBuffer.allocate(BLOCK_SIZE);
@@ -39,7 +39,7 @@ public class FileChannelBlockManager implements BlockManager {
         if (toWrite.capacity() != BLOCK_SIZE) {
             throw new IllegalArgumentException("Buffer must be exactly BLOCK_SIZE bytes");
         }
-        VFSFile file = vfs.open(containerId, OpenMode.WRITE);
+        VFSFile file = vfs.open(containerId, OpenMode.WRITE, OpenMode.CREATE);
         if (!blockExists(file, blockNumber)) {
             allocateBlock(containerId, blockNumber);
         }

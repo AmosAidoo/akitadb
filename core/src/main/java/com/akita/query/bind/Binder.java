@@ -5,6 +5,7 @@ import com.akita.catalog.TableMetadata;
 import com.akita.datatype.AkitaType;
 import com.akita.sql.ast.BinaryExpression;
 import com.akita.sql.ast.BinaryOperator;
+import com.akita.sql.ast.CreateTableStatement;
 import com.akita.sql.ast.Expression;
 import com.akita.sql.ast.IdentifierExpression;
 import com.akita.sql.ast.LiteralExpression;
@@ -28,6 +29,7 @@ public class Binder {
     public BoundStatement bind(Statement statement) {
         return switch (statement) {
             case SelectStatement select -> bindSelect(select);
+            case CreateTableStatement ignored -> throw new BindException("CREATE TABLE is executed directly");
         };
     }
 

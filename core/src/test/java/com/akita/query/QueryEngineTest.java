@@ -2,6 +2,7 @@ package com.akita.query;
 
 import com.akita.buffer.BufferPoolManager;
 import com.akita.buffer.PageId;
+import com.akita.catalog.Catalog;
 import com.akita.catalog.JsonCatalog;
 import com.akita.catalog.TableMetadata;
 import com.akita.datatype.AkitaType;
@@ -11,6 +12,7 @@ import com.akita.datatype.Schema;
 import com.akita.heap.HeapFile;
 import com.akita.heap.HeapFileHeader;
 import com.akita.heap.ObjectType;
+import com.akita.page.PageDirectory;
 import com.akita.page.Tuple;
 import com.akita.page.PageHeader;
 import com.akita.query.execution.Row;
@@ -35,6 +37,39 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class QueryEngineTest {
 
     @Test
+    void createsTableMetadataAndInitialHeapPage(
+            BufferPoolManager bpm,
+            FileChannelBlockManager bm
+    ) throws Exception {
+        Catalog catalog = catalog();
+
+        QueryResult result = new QueryEngine(catalog, bpm).execute("""
+                CREATE TABLE users (
+                    id INTEGER NOT NULL,
+                    name VARCHAR(32),
+                    active BOOLEAN
+                )
+                """);
+
+        assertThat(result.schema().columns()).isEmpty();
+        assertThat(result.rows()).isEmpty();
+
+        TableMetadata table = catalog.getTable("users");
+        assertThat(table).isNotNull();
+        assertThat(table.schema().columns()).containsExactly(
+                new ColumnMetadata("id", new AkitaType.Integer(), 0, false),
+                new ColumnMetadata("name", new AkitaType.Varchar(32), 1, true),
+                new ColumnMetadata("active", new AkitaType.Boolean(), 2, true)
+        );
+
+        ByteBuffer page = ByteBuffer.allocate(BlockManager.BLOCK_SIZE);
+        bm.readBlock(table.containerId(), PageDirectory.FIRST_PAGE_DIRECTORY_NUMBER, page);
+        page.clear();
+        assertThat(page.getInt()).isEqualTo(0);
+        assertThat(page.getShort()).isEqualTo((short) 0);
+    }
+
+    @Test
     void executesSingleTableSelectEndToEnd(
             BufferPoolManager bpm,
             FileChannelBlockManager bm,
@@ -48,7 +83,7 @@ class QueryEngineTest {
                 Row.of(new AkitaValue.IntVal(3), new AkitaValue.VarcharVal("Edsger"), new AkitaValue.IntVal(32))
         ));
 
-        JsonCatalog catalog = new JsonCatalog();
+        Catalog catalog = catalog();
         catalog.createTable(new TableMetadata("users", containerId, schema));
 
         QueryResult result = new QueryEngine(catalog, bpm)
@@ -76,7 +111,7 @@ class QueryEngineTest {
                 Row.of(new AkitaValue.IntVal(2), new AkitaValue.VarcharVal("Grace"), new AkitaValue.IntVal(17))
         ));
 
-        JsonCatalog catalog = new JsonCatalog();
+        Catalog catalog = catalog();
         catalog.createTable(new TableMetadata("users", containerId, schema));
 
         try (QueryCursor cursor = new QueryEngine(catalog, bpm).query("SELECT name FROM users")) {
@@ -91,7 +126,7 @@ class QueryEngineTest {
 
     @Test
     void surfacesUnknownTableAsBindError(BufferPoolManager bpm) {
-        QueryEngine queryEngine = new QueryEngine(new JsonCatalog(), bpm);
+        QueryEngine queryEngine = new QueryEngine(catalog(), bpm);
 
         assertThatThrownBy(() -> queryEngine.execute("SELECT id FROM missing"))
                 .isInstanceOfSatisfying(QueryException.class, exception -> {
@@ -102,7 +137,7 @@ class QueryEngineTest {
 
     @Test
     void surfacesUnknownColumnAsBindError(BufferPoolManager bpm) {
-        JsonCatalog catalog = new JsonCatalog();
+        Catalog catalog = catalog();
         catalog.createTable(new TableMetadata("users", ContainerId.generate(), usersSchema()));
         QueryEngine queryEngine = new QueryEngine(catalog, bpm);
 
@@ -115,7 +150,7 @@ class QueryEngineTest {
 
     @Test
     void surfacesInvalidSqlAsParseError(BufferPoolManager bpm) {
-        QueryEngine queryEngine = new QueryEngine(new JsonCatalog(), bpm);
+        QueryEngine queryEngine = new QueryEngine(catalog(), bpm);
 
         assertThatThrownBy(() -> queryEngine.execute("SELECT FROM users"))
                 .isInstanceOfSatisfying(QueryException.class, exception -> {
@@ -141,6 +176,10 @@ class QueryEngineTest {
             Tuple tuple = codec.encode(row, schema);
             heapFile.insertTuple(tuple);
         }
+    }
+
+    private static Catalog catalog() {
+        return new JsonCatalog();
     }
 
     private static Schema usersSchema() {

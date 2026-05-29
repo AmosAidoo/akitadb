@@ -2,12 +2,15 @@ package com.akita.sql.parser;
 
 import com.akita.sql.ast.BinaryExpression;
 import com.akita.sql.ast.BinaryOperator;
+import com.akita.sql.ast.ColumnDefinition;
+import com.akita.sql.ast.CreateTableStatement;
 import com.akita.sql.ast.Expression;
 import com.akita.sql.ast.IdentifierExpression;
 import com.akita.sql.ast.LiteralExpression;
 import com.akita.sql.ast.QualifiedName;
 import com.akita.sql.ast.SelectItem;
 import com.akita.sql.ast.SelectStatement;
+import com.akita.sql.ast.SqlTypeName;
 import com.akita.sql.ast.TableRef;
 import com.akita.sql.ast.UnaryExpression;
 import com.akita.sql.ast.UnaryOperator;
@@ -19,6 +22,33 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ParserTest {
+
+    @Test
+    void parsesCreateTable() {
+        CreateTableStatement statement = parseCreateTable("""
+                CREATE TABLE users (
+                    id INTEGER NOT NULL,
+                    name VARCHAR(255),
+                    active BOOLEAN
+                )
+                """);
+
+        assertThat(statement).isEqualTo(new CreateTableStatement(
+                QualifiedName.of("users"),
+                List.of(
+                        new ColumnDefinition("id", new SqlTypeName.Integer(), false),
+                        new ColumnDefinition("name", new SqlTypeName.Varchar(255), true),
+                        new ColumnDefinition("active", new SqlTypeName.Boolean(), true)
+                )
+        ));
+    }
+
+    @Test
+    void rejectsInvalidCreateTableType() {
+        assertThatThrownBy(() -> parseCreateTable("CREATE TABLE users (id MYSTERY)"))
+                .isInstanceOf(ParseException.class)
+                .hasMessageContaining("Unknown type: MYSTERY");
+    }
 
     @Test
     void parsesSimpleSelectFrom() {
@@ -148,6 +178,10 @@ class ParserTest {
 
     private static SelectStatement parseSelect(String source) {
         return (SelectStatement) new Parser(source).parse();
+    }
+
+    private static CreateTableStatement parseCreateTable(String source) {
+        return (CreateTableStatement) new Parser(source).parse();
     }
 
     private static Expression identifier(String first, String... rest) {

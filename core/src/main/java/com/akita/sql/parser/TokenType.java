@@ -2,10 +2,13 @@ package com.akita.sql.parser;
 
 public enum TokenType {
     SELECT,
+    CREATE,
+    TABLE,
     FROM,
     WHERE,
     AND,
     OR,
+    NOT,
     TRUE,
     FALSE,
     NULL,
