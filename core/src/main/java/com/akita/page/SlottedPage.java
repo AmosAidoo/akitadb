@@ -50,6 +50,10 @@ public abstract class SlottedPage {
         return PageHeader.SIZE;
     }
 
+    protected int numberOfSlotsOffset() {
+        return PageHeader.NUMBER_OF_SLOTS_OFFSET;
+    }
+
     protected int slotDirectoryOffset(int slotIndex) {
         return headerSize() + (slotIndex * Slot.SERIALIZED_SIZE);
     }
@@ -86,7 +90,7 @@ public abstract class SlottedPage {
         Slot newSlot = Slot.create((short) slots.size(), (short) (lastOffsetBase - tuple.size()), (short) tuple.size());
         slots.add(newSlot);
         pageHeader.setNumberOfSlots((short) slots.size());
-        data.putShort(PageHeader.NUMBER_OF_SLOTS_OFFSET, pageHeader.getNumberOfSlots());
+        data.putShort(numberOfSlotsOffset(), pageHeader.getNumberOfSlots());
         data.put(slotDirectoryOffset(slots.size() - 1), newSlot.getBytes());
         data.put(newSlot.getOffset(), tuple.getBuffer().array());
         return newSlot;
@@ -95,7 +99,7 @@ public abstract class SlottedPage {
     protected void clearTuples() {
         slots.clear();
         pageHeader.setNumberOfSlots((short) 0);
-        data.putShort(PageHeader.NUMBER_OF_SLOTS_OFFSET, pageHeader.getNumberOfSlots());
+        data.putShort(numberOfSlotsOffset(), pageHeader.getNumberOfSlots());
     }
 
     protected Tuple getTupleBySlotIndex(int slotIndex) {

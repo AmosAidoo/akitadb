@@ -6,6 +6,7 @@ import com.akita.sql.ast.ColumnDefinition;
 import com.akita.sql.ast.CreateTableStatement;
 import com.akita.sql.ast.Expression;
 import com.akita.sql.ast.IdentifierExpression;
+import com.akita.sql.ast.InsertStatement;
 import com.akita.sql.ast.LiteralExpression;
 import com.akita.sql.ast.QualifiedName;
 import com.akita.sql.ast.SelectItem;
@@ -53,7 +54,10 @@ public class Parser {
         if (check(TokenType.CREATE)) {
             return createTableStatement();
         }
-        throw error(peek(), "Expected SELECT or CREATE statement");
+        if (check(TokenType.INSERT)) {
+            return insertStatement();
+        }
+        throw error(peek(), "Expected SELECT, CREATE, or INSERT statement");
     }
 
     private CreateTableStatement createTableStatement() {
@@ -122,6 +126,34 @@ public class Parser {
         }
 
         return new SelectStatement(selectItems, from, where);
+    }
+
+    private InsertStatement insertStatement() {
+        consume(TokenType.INSERT, "Expected INSERT");
+        consume(TokenType.INTO, "Expected INTO after INSERT");
+        QualifiedName tableName = qualifiedName();
+
+        List<String> columns = new ArrayList<>();
+        if (match(TokenType.LEFT_PAREN)) {
+            do {
+                columns.add(consume(TokenType.IDENTIFIER, "Expected column name").lexeme());
+            } while (match(TokenType.COMMA));
+            consume(TokenType.RIGHT_PAREN, "Expected ')' after insert column list");
+        }
+
+        consume(TokenType.VALUES, "Expected VALUES after insert target");
+        List<List<Expression>> values = new ArrayList<>();
+        do {
+            consume(TokenType.LEFT_PAREN, "Expected '(' before VALUES row");
+            List<Expression> row = new ArrayList<>();
+            do {
+                row.add(expression());
+            } while (match(TokenType.COMMA));
+            consume(TokenType.RIGHT_PAREN, "Expected ')' after VALUES row");
+            values.add(row);
+        } while (match(TokenType.COMMA));
+
+        return new InsertStatement(tableName, columns, values);
     }
 
     private Expression expression() {

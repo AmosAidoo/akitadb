@@ -49,6 +49,11 @@ public final class LogicalPlanPrinter {
                     .append("] output=")
                     .append(formatSchema(scan))
                     .append(System.lineSeparator());
+            case LogicalInsert insert -> builder.append("Insert[table=")
+                    .append(insert.statement().table().metadata().tableName())
+                    .append("] output=")
+                    .append(formatSchema(insert))
+                    .append(System.lineSeparator());
         }
     }
 

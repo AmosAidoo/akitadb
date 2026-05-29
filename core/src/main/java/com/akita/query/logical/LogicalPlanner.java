@@ -4,6 +4,7 @@ import com.akita.datatype.ColumnMetadata;
 import com.akita.datatype.Schema;
 import com.akita.query.bind.BoundColumnReference;
 import com.akita.query.bind.BoundExpression;
+import com.akita.query.bind.BoundInsertStatement;
 import com.akita.query.bind.BoundLiteral;
 import com.akita.query.bind.BoundSelectItem;
 import com.akita.query.bind.BoundSelectStatement;
@@ -16,6 +17,7 @@ public class LogicalPlanner {
 
     public LogicalPlan plan(BoundStatement statement) {
         return switch (statement) {
+            case BoundInsertStatement insert -> new LogicalInsert(insert);
             case BoundSelectStatement select -> planSelect(select);
         };
     }

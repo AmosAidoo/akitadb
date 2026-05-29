@@ -3,7 +3,10 @@ package com.akita.sql.parser;
 public enum TokenType {
     SELECT,
     CREATE,
+    INSERT,
     TABLE,
+    INTO,
+    VALUES,
     FROM,
     WHERE,
     AND,

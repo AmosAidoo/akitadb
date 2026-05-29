@@ -165,6 +165,32 @@ class HeapFileTest {
                 .isEqualTo(expectedFreeSpace);
     }
 
+    @Test
+    void insertAllocatesDataPageWhenNoPageHasFreeSpace(
+            BufferPoolManager bpm,
+            FileChannelBlockManager bm,
+            FileChannelContainerManager cm
+    ) throws Exception {
+        ContainerId containerId = ContainerFixture.create(bm, cm).createTable();
+        SlottedPageWriter.create(bm)
+                .addPageDirectoryTuple(1, 0)
+                .writeTo(new PageId(containerId, 0), tableHeader(), nextDirectoryHeader(0));
+        SlottedPageWriter.create(bm)
+                .writeTo(new PageId(containerId, 1), null);
+
+        HeapFile heapFile = HeapFile.open(containerId, bpm);
+
+        ByteBuffer buffer = ByteBuffer.allocate(Short.BYTES);
+        buffer.putShort((short) 123);
+        RecordId recordId = heapFile.insertTuple(new Tuple(buffer));
+
+        assertThat(recordId.pageId()).isEqualTo(new PageId(containerId, 2));
+        assertThat(heapFile.getTuple(recordId).readShort()).isEqualTo((short) 123);
+        HeapFile freshHeapFile = HeapFile.open(containerId, bpm);
+        assertThat(freshHeapFile.pageDirectory.getFreeSpaceForPage(recordId.pageId()))
+                .isEqualTo(BlockManager.BLOCK_SIZE - PageHeader.SIZE - Slot.SERIALIZED_SIZE - Short.BYTES);
+    }
+
     private static ByteBuffer tableHeader() {
         ByteBuffer buffer = ByteBuffer.allocate(HeapFileHeader.SIZE);
         HeapFileHeader.write(buffer, ObjectType.TABLE);

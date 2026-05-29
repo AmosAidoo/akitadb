@@ -8,7 +8,10 @@ public class Lexer {
     private static final Map<String, TokenType> KEYWORDS = Map.ofEntries(
             Map.entry("SELECT", TokenType.SELECT),
             Map.entry("CREATE", TokenType.CREATE),
+            Map.entry("INSERT", TokenType.INSERT),
             Map.entry("TABLE", TokenType.TABLE),
+            Map.entry("INTO", TokenType.INTO),
+            Map.entry("VALUES", TokenType.VALUES),
             Map.entry("FROM", TokenType.FROM),
             Map.entry("WHERE", TokenType.WHERE),
             Map.entry("AND", TokenType.AND),
