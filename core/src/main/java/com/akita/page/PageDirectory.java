@@ -46,6 +46,23 @@ public class PageDirectory extends SlottedPage {
         this.nextBlockPointer = data.getShort();
     }
 
+    @Override
+    protected int headerSize() {
+        int pageDirectoryHeaderSize = PageHeader.SIZE + Short.BYTES;
+        if (blockNumber == FIRST_PAGE_DIRECTORY_NUMBER) {
+            return HeapFileHeader.SIZE + pageDirectoryHeaderSize;
+        }
+        return pageDirectoryHeaderSize;
+    }
+
+    @Override
+    protected int numberOfSlotsOffset() {
+        if (blockNumber == FIRST_PAGE_DIRECTORY_NUMBER) {
+            return HeapFileHeader.SIZE + PageHeader.NUMBER_OF_SLOTS_OFFSET;
+        }
+        return PageHeader.NUMBER_OF_SLOTS_OFFSET;
+    }
+
     public void parseFirstPage(ByteBuffer data) {
         data.position(HeapFileHeader.SIZE);
         parsePage(data);
@@ -90,6 +107,17 @@ public class PageDirectory extends SlottedPage {
         return new PageId(containerId, tuple.readLong());
     }
 
+    public void insertEntry(Tuple tuple) {
+        insertTupleRaw(tuple);
+    }
+
+    public void cacheInsertedEntry(Tuple tuple) {
+        int lastOffsetBase = lowestTupleOffset();
+        Slot newSlot = Slot.create((short) slots.size(), (short) (lastOffsetBase - tuple.size()), (short) tuple.size());
+        slots.add(newSlot);
+        pageHeader.setNumberOfSlots((short) slots.size());
+    }
+
     public PageId pageId() {
         return new PageId(containerId, blockNumber);
     }
@@ -108,6 +136,11 @@ public class PageDirectory extends SlottedPage {
             next = loaded;
             return next;
         }
+    }
+
+    public void cacheNextDirectory(PageDirectory next) {
+        this.next = next;
+        this.nextBlockPointer = (short) next.pageId().blockNumber();
     }
 
     @Override

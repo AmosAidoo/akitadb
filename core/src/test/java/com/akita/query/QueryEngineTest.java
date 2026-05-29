@@ -125,6 +125,43 @@ class QueryEngineTest {
     }
 
     @Test
+    void executesInsertEndToEnd(BufferPoolManager bpm) {
+        Catalog catalog = catalog();
+        QueryEngine queryEngine = new QueryEngine(catalog, bpm);
+        queryEngine.execute("""
+                CREATE TABLE users (
+                    id INTEGER NOT NULL,
+                    name VARCHAR(255) NOT NULL,
+                    age INTEGER NOT NULL
+                )
+                """);
+
+        QueryResult insertResult = queryEngine.execute("""
+                INSERT INTO users (name, age, id)
+                VALUES ('Ada', 42, 1), ('Grace', 17, 2)
+                """);
+
+        assertThat(insertResult.schema().columns()).isEmpty();
+        assertThat(insertResult.rows()).isEmpty();
+        QueryResult selectResult = queryEngine.execute("SELECT id, name FROM users WHERE age > 18");
+        assertThat(selectResult.rows()).containsExactly(
+                Row.of(new AkitaValue.IntVal(1), new AkitaValue.VarcharVal("Ada"))
+        );
+    }
+
+    @Test
+    void surfacesInsertTypeMismatchAsBindError(BufferPoolManager bpm) {
+        QueryEngine queryEngine = new QueryEngine(catalog(), bpm);
+        queryEngine.execute("CREATE TABLE users (id INTEGER NOT NULL, name VARCHAR(8) NOT NULL)");
+
+        assertThatThrownBy(() -> queryEngine.execute("INSERT INTO users VALUES ('not-int', 'Ada')"))
+                .isInstanceOfSatisfying(QueryException.class, exception -> {
+                    assertThat(exception.kind()).isEqualTo(QueryException.Kind.BIND);
+                    assertThat(exception).hasMessageContaining("Value for column id");
+                });
+    }
+
+    @Test
     void surfacesUnknownTableAsBindError(BufferPoolManager bpm) {
         QueryEngine queryEngine = new QueryEngine(catalog(), bpm);
 

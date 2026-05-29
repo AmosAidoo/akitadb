@@ -3,11 +3,13 @@ package com.akita.query.bind;
 import com.akita.catalog.Catalog;
 import com.akita.catalog.TableMetadata;
 import com.akita.datatype.AkitaType;
+import com.akita.datatype.ColumnMetadata;
 import com.akita.sql.ast.BinaryExpression;
 import com.akita.sql.ast.BinaryOperator;
 import com.akita.sql.ast.CreateTableStatement;
 import com.akita.sql.ast.Expression;
 import com.akita.sql.ast.IdentifierExpression;
+import com.akita.sql.ast.InsertStatement;
 import com.akita.sql.ast.LiteralExpression;
 import com.akita.sql.ast.QualifiedName;
 import com.akita.sql.ast.SelectItem;
@@ -17,7 +19,9 @@ import com.akita.sql.ast.TableRef;
 import com.akita.sql.ast.UnaryExpression;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public class Binder {
     private final Catalog catalog;
@@ -29,6 +33,7 @@ public class Binder {
     public BoundStatement bind(Statement statement) {
         return switch (statement) {
             case SelectStatement select -> bindSelect(select);
+            case InsertStatement insert -> bindInsert(insert);
             case CreateTableStatement ignored -> throw new BindException("CREATE TABLE is executed directly");
         };
     }
@@ -51,6 +56,29 @@ public class Binder {
         }
 
         return new BoundSelectStatement(selectItems, table, where);
+    }
+
+    private BoundInsertStatement bindInsert(InsertStatement statement) {
+        BoundTable table = bindTable(new TableRef(statement.tableName()));
+        List<ColumnMetadata> targetColumns = targetColumns(table, statement.columns());
+        List<List<BoundExpression>> rows = new ArrayList<>();
+
+        for (List<Expression> row : statement.values()) {
+            if (row.size() != targetColumns.size()) {
+                throw new BindException("INSERT has " + row.size()
+                        + " values but target has " + targetColumns.size() + " columns");
+            }
+            List<BoundExpression> boundRow = new ArrayList<>();
+            for (int i = 0; i < row.size(); i++) {
+                BoundExpression value = bindExpression(row.get(i), new BindingScope(table));
+                ColumnMetadata column = targetColumns.get(i);
+                validateInsertValue(column, value);
+                boundRow.add(value);
+            }
+            rows.add(boundRow);
+        }
+
+        return new BoundInsertStatement(table, targetColumns, rows);
     }
 
     private BoundTable bindTable(TableRef tableRef) {
@@ -99,6 +127,50 @@ public class Binder {
     private static String tableName(QualifiedName name) {
         List<String> parts = name.parts();
         return parts.getLast();
+    }
+
+    private static List<ColumnMetadata> targetColumns(BoundTable table, List<String> columnNames) {
+        if (columnNames.isEmpty()) {
+            return table.metadata().schema().columns();
+        }
+
+        List<ColumnMetadata> columns = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        for (String columnName : columnNames) {
+            if (!seen.add(columnName)) {
+                throw new BindException("Duplicate INSERT column: " + columnName);
+            }
+            ColumnMetadata column = table.metadata().schema().columns().stream()
+                    .filter(candidate -> candidate.name().equals(columnName))
+                    .findFirst()
+                    .orElseThrow(() -> new BindException("Unknown column in INSERT: " + columnName));
+            columns.add(column);
+        }
+        if (columns.size() != table.metadata().schema().columns().size()) {
+            throw new BindException("INSERT must provide values for all columns");
+        }
+        return columns;
+    }
+
+    private static void validateInsertValue(ColumnMetadata column, BoundExpression value) {
+        if (value.type() == null) {
+            if (!column.nullable()) {
+                throw new BindException("Column cannot be null: " + column.name());
+            }
+            return;
+        }
+        if (!compatible(column.type(), value.type())) {
+            throw new BindException("Value for column " + column.name() + " has type "
+                    + value.type().getClass().getSimpleName() + " but expected "
+                    + column.type().getClass().getSimpleName());
+        }
+    }
+
+    private static boolean compatible(AkitaType target, AkitaType source) {
+        if (target instanceof AkitaType.Varchar targetVarchar && source instanceof AkitaType.Varchar sourceVarchar) {
+            return sourceVarchar.maxLength() <= targetVarchar.maxLength();
+        }
+        return target.getClass().equals(source.getClass());
     }
 
     private static AkitaType literalType(Object value) {
