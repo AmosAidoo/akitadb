@@ -2,12 +2,15 @@ package com.akita.sql.parser;
 
 import com.akita.sql.ast.BinaryExpression;
 import com.akita.sql.ast.BinaryOperator;
+import com.akita.sql.ast.ColumnDefinition;
+import com.akita.sql.ast.CreateTableStatement;
 import com.akita.sql.ast.Expression;
 import com.akita.sql.ast.IdentifierExpression;
 import com.akita.sql.ast.LiteralExpression;
 import com.akita.sql.ast.QualifiedName;
 import com.akita.sql.ast.SelectItem;
 import com.akita.sql.ast.SelectStatement;
+import com.akita.sql.ast.SqlTypeName;
 import com.akita.sql.ast.Statement;
 import com.akita.sql.ast.TableRef;
 import com.akita.sql.ast.UnaryExpression;
@@ -47,7 +50,59 @@ public class Parser {
         if (check(TokenType.SELECT)) {
             return selectStatement();
         }
-        throw error(peek(), "Expected SELECT statement");
+        if (check(TokenType.CREATE)) {
+            return createTableStatement();
+        }
+        throw error(peek(), "Expected SELECT or CREATE statement");
+    }
+
+    private CreateTableStatement createTableStatement() {
+        consume(TokenType.CREATE, "Expected CREATE");
+        consume(TokenType.TABLE, "Expected TABLE after CREATE");
+        QualifiedName tableName = qualifiedName();
+        consume(TokenType.LEFT_PAREN, "Expected '(' after table name");
+
+        List<ColumnDefinition> columns = new ArrayList<>();
+        do {
+            columns.add(columnDefinition());
+        } while (match(TokenType.COMMA));
+
+        consume(TokenType.RIGHT_PAREN, "Expected ')' after column definitions");
+        return new CreateTableStatement(tableName, columns);
+    }
+
+    private ColumnDefinition columnDefinition() {
+        String name = consume(TokenType.IDENTIFIER, "Expected column name").lexeme();
+        SqlTypeName type = typeName();
+        boolean nullable = true;
+        if (match(TokenType.NOT)) {
+            consume(TokenType.NULL, "Expected NULL after NOT");
+            nullable = false;
+        }
+        return new ColumnDefinition(name, type, nullable);
+    }
+
+    private SqlTypeName typeName() {
+        Token name = consume(TokenType.IDENTIFIER, "Expected type name");
+        return switch (name.lexeme().toUpperCase()) {
+            case "INTEGER", "INT" -> new SqlTypeName.Integer();
+            case "BIGINT" -> new SqlTypeName.BigInt();
+            case "DOUBLE" -> new SqlTypeName.Double();
+            case "BOOLEAN", "BOOL" -> new SqlTypeName.Boolean();
+            case "VARCHAR" -> varcharType();
+            default -> throw error(name, "Unknown type: " + name.lexeme());
+        };
+    }
+
+    private SqlTypeName.Varchar varcharType() {
+        consume(TokenType.LEFT_PAREN, "Expected '(' after VARCHAR");
+        Token length = consume(TokenType.INTEGER, "Expected VARCHAR length");
+        consume(TokenType.RIGHT_PAREN, "Expected ')' after VARCHAR length");
+        int maxLength = Integer.parseInt(length.lexeme());
+        if (maxLength < 1) {
+            throw error(length, "VARCHAR length must be positive");
+        }
+        return new SqlTypeName.Varchar(maxLength);
     }
 
     private SelectStatement selectStatement() {

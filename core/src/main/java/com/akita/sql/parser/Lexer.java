@@ -7,10 +7,13 @@ import java.util.Map;
 public class Lexer {
     private static final Map<String, TokenType> KEYWORDS = Map.ofEntries(
             Map.entry("SELECT", TokenType.SELECT),
+            Map.entry("CREATE", TokenType.CREATE),
+            Map.entry("TABLE", TokenType.TABLE),
             Map.entry("FROM", TokenType.FROM),
             Map.entry("WHERE", TokenType.WHERE),
             Map.entry("AND", TokenType.AND),
             Map.entry("OR", TokenType.OR),
+            Map.entry("NOT", TokenType.NOT),
             Map.entry("TRUE", TokenType.TRUE),
             Map.entry("FALSE", TokenType.FALSE),
             Map.entry("NULL", TokenType.NULL)
