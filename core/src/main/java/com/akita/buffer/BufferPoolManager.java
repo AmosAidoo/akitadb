@@ -26,17 +26,27 @@ public class BufferPoolManager {
     private final Map<FrameId, Frame> frames;
     private final Queue<Frame> freeFrames;
     private final Map<PageId, Frame> pageTable;
+    private final BufferPoolMetrics metrics;
 
-    private BufferPoolManager(DiskScheduler diskScheduler, Replacer replacer, Map<FrameId, Frame> frames, Map<PageId, Frame> pageTable) {
+    private BufferPoolManager(DiskScheduler diskScheduler, Replacer replacer, Map<FrameId, Frame> frames, Map<PageId, Frame> pageTable, BufferPoolMetrics metrics) {
         this.diskScheduler = diskScheduler;
         this.replacer = replacer;
         this.pageTable = pageTable;
         this.frames = frames;
         this.freeFrames = new LinkedList<>(frames.values());
+        this.metrics = metrics;
     }
 
     public static BufferPoolManager create(DiskScheduler diskScheduler, Replacer replacer, Map<FrameId, Frame> frames, Map<PageId, Frame> pageTable) {
-        return new BufferPoolManager(diskScheduler, replacer, frames, pageTable);
+        return create(diskScheduler, replacer, frames, pageTable, new BufferPoolMetrics());
+    }
+
+    public static BufferPoolManager create(DiskScheduler diskScheduler, Replacer replacer, Map<FrameId, Frame> frames, Map<PageId, Frame> pageTable, BufferPoolMetrics metrics) {
+        return new BufferPoolManager(diskScheduler, replacer, frames, pageTable, metrics);
+    }
+
+    public BufferPoolMetrics metrics() {
+        return metrics;
     }
 
     private record FrameReservation(FrameId frameId, boolean pinnedForReuse) {}
@@ -93,6 +103,7 @@ public class BufferPoolManager {
             return;
         }
 
+        metrics.recordDirtyPageFlush();
         Future<?> writeFuture = diskScheduler.schedulePageWrite(snapshot.pageId(), snapshot.data());
         frame.getWriteLatch().lock();
         try {
@@ -140,6 +151,7 @@ public class BufferPoolManager {
 
             FrameId frameId = replacer.evict();
             if (frameId != null) {
+                metrics.recordFrameEviction();
                 frames.get(frameId).pin();
                 PageId oldPageId = frames.get(frameId).getPageId();
                 if (oldPageId != null) {
@@ -150,22 +162,27 @@ public class BufferPoolManager {
 
             // All frames are pinned. Release the latch and sleep until
             // a frame becomes available (signalled from unpin/delete).
+            metrics.recordFrameWait();
             frameAvailable.await();
         }
     }
 
     public ReadPageGuard readPage(PageId pageId) throws InterruptedException, ExecutionException {
+        metrics.recordReadPageRequest();
         latch.lock();
         try {
             // Page already in buffer pool — fast path, no disk I/O needed
             Frame frame = pageTable.get(pageId);
             if (frame != null) {
+                metrics.recordReadPageHit();
                 replacer.recordAccess(frame.getFrameId(), pageId);
                 return ReadPageGuard.create(pageId, frame, replacer, this);
             }
         } finally {
             latch.unlock();
         }
+
+        metrics.recordReadPageMiss();
 
         // Page not in pool — we need to find a frame, read from disk, then load it.
         // acquireFrameId() blocks here (without spinning) if no frame is available.
@@ -199,16 +216,20 @@ public class BufferPoolManager {
     }
 
     public WritePageGuard writePage(PageId pageId) throws InterruptedException, ExecutionException {
+        metrics.recordWritePageRequest();
         latch.lock();
         try {
             Frame frame = pageTable.get(pageId);
             if (frame != null) {
+                metrics.recordWritePageHit();
                 replacer.recordAccess(frame.getFrameId(), pageId);
                 return WritePageGuard.create(pageId, frame, replacer, this);
             }
         } finally {
             latch.unlock();
         }
+
+        metrics.recordWritePageMiss();
 
         latch.lock();
         FrameReservation reservation;
@@ -228,6 +249,7 @@ public class BufferPoolManager {
     }
 
     public WritePageGuard allocatePage(PageId pageId) throws InterruptedException, ExecutionException {
+        metrics.recordAllocatePageRequest();
         latch.lock();
         try {
             if (pageTable.containsKey(pageId)) {
@@ -270,11 +292,13 @@ public class BufferPoolManager {
     }
 
     public boolean flushPage(PageId pageId) {
+        metrics.recordFlushPageRequest();
         latch.lock();
         Frame frame;
         try {
             frame = pageTable.get(pageId);
             if (frame == null) {
+                metrics.recordFlushPageMiss();
                 return false;
             }
         } finally {

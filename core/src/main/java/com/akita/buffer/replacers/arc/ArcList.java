@@ -53,6 +53,7 @@ class ArcList {
         ArcListItem last = tail;
         ArcListItem prev = tail.getPrev();
         if (prev == null) {
+            head = null;
             tail = null;
         } else {
             prev.setNext(null);

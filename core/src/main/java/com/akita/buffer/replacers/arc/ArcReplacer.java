@@ -20,15 +20,37 @@ public class ArcReplacer implements Replacer {
     private final ArcList b2 = ArcList.create();
     private final Map<PageId, ArcListItem> pageTable;
     private final Map<FrameId, ArcListItem> frameTable;
+    private final ArcReplacerMetrics metrics;
 
-    private ArcReplacer(int capacity) {
+    private ArcReplacer(int capacity, ArcReplacerMetrics metrics) {
         this.capacity = capacity;
+        this.metrics = metrics;
         pageTable = new HashMap<>();
         frameTable = new HashMap<>();
     }
 
     public static ArcReplacer create(int capacity) {
-        return new ArcReplacer(capacity);
+        return create(capacity, new ArcReplacerMetrics());
+    }
+
+    public static ArcReplacer create(int capacity, ArcReplacerMetrics metrics) {
+        return new ArcReplacer(capacity, metrics);
+    }
+
+    public ArcReplacerMetrics.Snapshot metrics() {
+        latch.lock();
+        try {
+            return metrics.snapshot(
+                    t1.size(),
+                    t2.size(),
+                    b1.size(),
+                    b2.size(),
+                    t1Target,
+                    currentEvictableSize
+            );
+        } finally {
+            latch.unlock();
+        }
     }
 
     @Override
@@ -79,6 +101,7 @@ public class ArcReplacer implements Replacer {
 
         victim.setLocation(ghostLocation);
         ghostList.mruInsert(victim);
+        metrics.recordEviction(ghostLocation == ArcLocation.B1 ? ArcLocation.T1 : ArcLocation.T2);
 
         if (t1.size() + t2.size() > capacity)
             throw new IllegalStateException("t1 and t2 cannot be greater than capacity");
@@ -102,11 +125,13 @@ public class ArcReplacer implements Replacer {
 
     @Override
     public void recordAccess(FrameId frameId, PageId pageId) {
+        metrics.recordAccessRequest();
         latch.lock();
         try {
             ArcListItem item = pageTable.get(pageId);
             if (item != null) {
                 ArcLocation location = item.getLocation();
+                metrics.recordHit(location);
                 switch (location) {
                     case T1:
                         t1.removeFromList(item);
@@ -134,14 +159,31 @@ public class ArcReplacer implements Replacer {
                         break;
                 }
             } else {
+                metrics.recordMiss();
                 if (t1.size() + b1.size() == capacity) {
                     // Not b1.lruRemove because evict sets isEvictable to false
                     // and lruRemove only removes when isEvictable is true
                     ArcListItem b1Tail = b1.removeTail();
-                    pageTable.remove(b1Tail.getPageId());
+                    if (b1Tail != null) {
+                        metrics.recordMetadataDrop(ArcLocation.B1);
+                        pageTable.remove(b1Tail.getPageId());
+                    } else {
+                        ArcListItem t1Tail = t1.removeTail();
+                        if (t1Tail != null) {
+                            metrics.recordMetadataDrop(ArcLocation.T1);
+                            pageTable.remove(t1Tail.getPageId());
+                            frameTable.remove(t1Tail.getFrameId());
+                            if (t1Tail.getIsEvictable()) {
+                                currentEvictableSize--;
+                            }
+                        }
+                    }
                 } else if (t1.size() + b1.size() + t2.size() + b2.size() == 2 * capacity) {
                     ArcListItem b2Tail = b2.removeTail();
-                    pageTable.remove(b2Tail.getPageId());
+                    if (b2Tail != null) {
+                        metrics.recordMetadataDrop(ArcLocation.B2);
+                        pageTable.remove(b2Tail.getPageId());
+                    }
                 }
                 ArcListItem newItem = ArcListItem.create(frameId, pageId, ArcLocation.T1);
                 pageTable.put(pageId, newItem);
@@ -160,9 +202,14 @@ public class ArcReplacer implements Replacer {
 
     @Override
     public FrameId evict() {
+        metrics.recordEvictRequest();
         latch.lock();
         try {
-            return replaceUnsafe();
+            FrameId frameId = replaceUnsafe();
+            if (frameId == null) {
+                metrics.recordEvictMiss();
+            }
+            return frameId;
         } finally {
             latch.unlock();
         }
@@ -184,7 +231,9 @@ public class ArcReplacer implements Replacer {
             switch (item.getLocation()) {
                 case T1:
                     t1.removeFromList(item);
-                    // Deliberate fall through
+                    item.setIsEvictable(false);
+                    currentEvictableSize--;
+                    break;
                 case T2:
                     t2.removeFromList(item);
                     item.setIsEvictable(false);

@@ -4,6 +4,7 @@ import com.akita.buffer.FrameId;
 import com.akita.buffer.PageId;
 import com.akita.buffer.replacers.Replacer;
 import com.akita.buffer.replacers.arc.ArcReplacer;
+import com.akita.buffer.replacers.arc.ArcReplacerMetrics;
 import org.junit.jupiter.api.Test;
 import com.akita.storage.ContainerId;
 
@@ -132,6 +133,44 @@ class ArcReplacerTest {
         assertThat(replacer.evict()).isEqualTo(new FrameId(2));
         assertThat(replacer.evict()).isEqualTo(new FrameId(3));
         assertThat(replacer.evict()).isEqualTo(new FrameId(1));
+    }
+
+    @Test
+    void recordAccessBeyondCapacityDoesNotRequireB1GhostEntry() {
+        ArcReplacer replacer = ArcReplacer.create(3);
+        ContainerId containerId = containerId(1);
+
+        for (int i = 0; i < 10; i++) {
+            FrameId frameId = new FrameId(i % 3);
+            PageId pageId = new PageId(containerId, i);
+            replacer.recordAccess(frameId, pageId);
+            replacer.setEvictable(frameId, true);
+        }
+
+        assertThat(replacer.size()).isLessThanOrEqualTo(3);
+
+        ArcReplacerMetrics.Snapshot metrics = replacer.metrics();
+        assertThat(metrics.recordAccessRequests()).isEqualTo(10);
+        assertThat(metrics.misses()).isEqualTo(10);
+        assertThat(metrics.t1Size() + metrics.t2Size()).isLessThanOrEqualTo(3);
+    }
+
+    @Test
+    void recordsEvictionMetricsByResidentList() {
+        ArcReplacer replacer = ArcReplacer.create(2);
+        ContainerId containerId = containerId(1);
+
+        replacer.recordAccess(new FrameId(0), new PageId(containerId, 0));
+        replacer.setEvictable(new FrameId(0), true);
+        replacer.recordAccess(new FrameId(1), new PageId(containerId, 1));
+        replacer.setEvictable(new FrameId(1), true);
+
+        assertThat(replacer.evict()).isNotNull();
+
+        ArcReplacerMetrics.Snapshot metrics = replacer.metrics();
+        assertThat(metrics.evictRequests()).isEqualTo(1);
+        assertThat(metrics.evictionsFromT1() + metrics.evictionsFromT2()).isEqualTo(1);
+        assertThat(metrics.evictMisses()).isZero();
     }
 
     private static ContainerId containerId(long value) {

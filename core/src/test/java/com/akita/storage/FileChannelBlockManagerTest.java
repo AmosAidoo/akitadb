@@ -1,15 +1,10 @@
 package com.akita.storage;
 
-import com.akita.storage.*;
 import com.akita.testing.AkitaExtension;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.junit.jupiter.api.io.CleanupMode;
-import org.junit.jupiter.api.io.TempDir;
 
-import java.io.IOException;
-import java.nio.file.Path;
+import java.nio.ByteBuffer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -29,6 +24,34 @@ class FileChannelBlockManagerTest {
 
         bm.allocateBlock(containerId, 9);
         assertThat(file.size()).isEqualTo(10L * BlockManager.BLOCK_SIZE);
+
+        BlockManagerMetrics.Snapshot metrics = bm.metrics().snapshot();
+        assertThat(metrics.allocateBlockRequests()).isEqualTo(2);
+        assertThat(metrics.blocksZeroFilled()).isEqualTo(10);
+    }
+
+    @Test
+    void recordsBlockReadAndWriteRequests(
+            FileChannelBlockManager bm,
+            FileChannelContainerManager cm
+    ) throws Exception {
+        ContainerId containerId = cm.createContainer();
+        ByteBuffer writeBuffer = ByteBuffer.allocate(BlockManager.BLOCK_SIZE);
+        writeBuffer.putInt(1234);
+
+        bm.writeBlock(containerId, 0, writeBuffer);
+
+        ByteBuffer readBuffer = ByteBuffer.allocate(BlockManager.BLOCK_SIZE);
+        bm.readBlock(containerId, 0, readBuffer);
+        readBuffer.clear();
+
+        assertThat(readBuffer.getInt()).isEqualTo(1234);
+
+        BlockManagerMetrics.Snapshot metrics = bm.metrics().snapshot();
+        assertThat(metrics.writeBlockRequests()).isEqualTo(1);
+        assertThat(metrics.readBlockRequests()).isEqualTo(1);
+        assertThat(metrics.allocateBlockRequests()).isEqualTo(1);
+        assertThat(metrics.blocksZeroFilled()).isEqualTo(1);
     }
 
 //    @Test
