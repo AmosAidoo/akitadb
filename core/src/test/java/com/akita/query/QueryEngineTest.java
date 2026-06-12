@@ -17,10 +17,8 @@ import com.akita.page.Tuple;
 import com.akita.page.PageHeader;
 import com.akita.query.execution.Row;
 import com.akita.query.execution.RowTupleCodec;
-import com.akita.storage.BlockManager;
 import com.akita.storage.ContainerId;
-import com.akita.storage.FileChannelBlockManager;
-import com.akita.storage.FileChannelContainerManager;
+import com.akita.storage.Storage;
 import com.akita.testing.AkitaExtension;
 import com.akita.testing.ContainerFixture;
 import com.akita.testing.SlottedPageWriter;
@@ -39,7 +37,7 @@ class QueryEngineTest {
     @Test
     void createsTableMetadataAndInitialHeapPage(
             BufferPoolManager bpm,
-            FileChannelBlockManager bm
+            Storage storage
     ) throws Exception {
         Catalog catalog = catalog();
 
@@ -62,9 +60,7 @@ class QueryEngineTest {
                 new ColumnMetadata("active", new AkitaType.Boolean(), 2, true)
         );
 
-        ByteBuffer page = ByteBuffer.allocate(BlockManager.BLOCK_SIZE);
-        bm.readBlock(table.containerId(), PageDirectory.FIRST_PAGE_DIRECTORY_NUMBER, page);
-        page.clear();
+        ByteBuffer page = storage.read(new PageId(table.containerId(), PageDirectory.FIRST_PAGE_DIRECTORY_NUMBER));
         assertThat(page.getInt()).isEqualTo(0);
         assertThat(page.getShort()).isEqualTo((short) 0);
     }
@@ -72,12 +68,11 @@ class QueryEngineTest {
     @Test
     void executesSingleTableSelectEndToEnd(
             BufferPoolManager bpm,
-            FileChannelBlockManager bm,
-            FileChannelContainerManager cm
+            Storage storage
     ) throws Exception {
         Schema schema = usersSchema();
-        ContainerId containerId = ContainerFixture.create(bm, cm).createTable();
-        writeRows(bpm, bm, containerId, schema, List.of(
+        ContainerId containerId = ContainerFixture.create(storage).createTable();
+        writeRows(bpm, storage, containerId, schema, List.of(
                 Row.of(new AkitaValue.IntVal(1), new AkitaValue.VarcharVal("Ada"), new AkitaValue.IntVal(42)),
                 Row.of(new AkitaValue.IntVal(2), new AkitaValue.VarcharVal("Grace"), new AkitaValue.IntVal(17)),
                 Row.of(new AkitaValue.IntVal(3), new AkitaValue.VarcharVal("Edsger"), new AkitaValue.IntVal(32))
@@ -101,12 +96,11 @@ class QueryEngineTest {
     @Test
     void queryReturnsCursorForIteratorStyleRowAccess(
             BufferPoolManager bpm,
-            FileChannelBlockManager bm,
-            FileChannelContainerManager cm
+            Storage storage
     ) throws Exception {
         Schema schema = usersSchema();
-        ContainerId containerId = ContainerFixture.create(bm, cm).createTable();
-        writeRows(bpm, bm, containerId, schema, List.of(
+        ContainerId containerId = ContainerFixture.create(storage).createTable();
+        writeRows(bpm, storage, containerId, schema, List.of(
                 Row.of(new AkitaValue.IntVal(1), new AkitaValue.VarcharVal("Ada"), new AkitaValue.IntVal(42)),
                 Row.of(new AkitaValue.IntVal(2), new AkitaValue.VarcharVal("Grace"), new AkitaValue.IntVal(17))
         ));
@@ -198,13 +192,13 @@ class QueryEngineTest {
 
     private static void writeRows(
             BufferPoolManager bpm,
-            FileChannelBlockManager bm,
+            Storage storage,
             ContainerId containerId,
             Schema schema,
             List<Row> rows
     ) throws Exception {
-        SlottedPageWriter.create(bm)
-                .addPageDirectoryTuple(1, BlockManager.BLOCK_SIZE - PageHeader.SIZE)
+        SlottedPageWriter.create(storage)
+                .addPageDirectoryTuple(1, Storage.PAGE_SIZE - PageHeader.SIZE)
                 .writeTo(new PageId(containerId, 0), tableHeader(), pageDirectoryHeader());
 
         RowTupleCodec codec = new RowTupleCodec();

@@ -74,7 +74,7 @@ BufferPoolManager
 DiskScheduler
   |
   v
-BlockManager / VFS
+Storage
   |
   v
 container files on disk
@@ -84,7 +84,7 @@ Main packages:
 
 | Package | Role |
 | --- | --- |
-| `com.akita.storage` | container files, block I/O, VFS adapters, page allocation |
+| `com.akita.storage` | page-oriented storage over one file per container, page allocation |
 | `com.akita.buffer` | frames, page table, guards, disk scheduler, ARC replacement |
 | `com.akita.page` | page headers, slots, tuples, slotted-page layout, page directory |
 | `com.akita.heap` | heap-file open/scan/insert and heap page access |
@@ -96,8 +96,8 @@ Main packages:
 
 ## On-Disk Shape
 
-Storage uses fixed-size 8 KiB blocks. A `ContainerId` maps to one physical
-container file through the VFS layer. Higher layers treat each block as a page:
+Storage uses fixed-size 8 KiB pages. A `ContainerId` maps to one physical
+container file. Higher layers address data with `PageId`:
 
 ```text
 PageId = (ContainerId, blockNumber)
@@ -109,9 +109,8 @@ container file
 `-- block N  heap/index page
 ```
 
-The current `FileChannelBlockManager` grows files by writing zeroed 8 KiB blocks
-up to the requested block number, then reads and writes blocks at
-`blockNumber * 8192`.
+The current `FileChannelStorage` grows files by writing zeroed 8 KiB pages up to
+the requested block number, then reads and writes pages at `blockNumber * 8192`.
 
 ### Slotted Pages
 
@@ -179,18 +178,18 @@ BufferPoolManager
 |-- pageTable: PageId -> Frame
 |-- freeFrames: unused frames
 |-- replacer: ARC frame eviction
-`-- DiskScheduler -> BlockManager
+`-- DiskScheduler -> Storage
 
 readPage(page)
   hit:  record access, return ReadPageGuard
-  miss: reserve frame, flush victim if dirty, read block, return guard
+  miss: reserve frame, flush victim if dirty, read page, return guard
 
 writePage(page)
   hit:  record access, return WritePageGuard
-  miss: reserve frame, flush victim if dirty, read block, return guard
+  miss: reserve frame, flush victim if dirty, read page, return guard
 
 allocatePage(page)
-  allocate disk block, reserve frame, install empty page, return WritePageGuard
+  allocate storage page, reserve frame, install empty page, return WritePageGuard
 ```
 
 Guards pin pages while they are in use and unpin them when closed. Dirty frames

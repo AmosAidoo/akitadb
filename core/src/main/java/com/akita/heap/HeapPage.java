@@ -6,7 +6,7 @@ import com.akita.page.PageHeader;
 import com.akita.page.Slot;
 import com.akita.page.SlottedPage;
 import com.akita.page.Tuple;
-import com.akita.storage.BlockManager;
+import com.akita.storage.Storage;
 
 import java.nio.ByteBuffer;
 

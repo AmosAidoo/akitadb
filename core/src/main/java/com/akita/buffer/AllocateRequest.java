@@ -1,30 +1,30 @@
 package com.akita.buffer;
 
-import com.akita.storage.BlockManager;
+import com.akita.storage.Storage;
 
 import java.io.IOException;
 
 public class AllocateRequest implements Runnable {
     private final PageId pageId;
-    private final BlockManager blockManager;
+    private final Storage storage;
 
-    private AllocateRequest(PageId pageId, BlockManager blockManager) {
+    private AllocateRequest(PageId pageId, Storage storage) {
         this.pageId = pageId;
-        this.blockManager = blockManager;
+        this.storage = storage;
     }
 
-    public static AllocateRequest create(PageId pageId, BlockManager blockManager) {
-        return new AllocateRequest(pageId, blockManager);
+    public static AllocateRequest create(PageId pageId, Storage storage) {
+        return new AllocateRequest(pageId, storage);
     }
 
     @Override
     public void run() {
         try {
-            synchronized (blockManager) {
-                blockManager.allocateBlock(pageId.containerId(), pageId.blockNumber());
+            synchronized (storage) {
+                storage.allocate(pageId);
             }
         } catch (IOException e) {
-            e.printStackTrace();
+            throw new IllegalStateException("Unable to allocate page: " + pageId, e);
         }
     }
 }

@@ -1,6 +1,6 @@
 package com.akita.page;
 
-import com.akita.storage.BlockManager;
+import com.akita.storage.Storage;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -82,7 +82,7 @@ public abstract class SlottedPage {
         return slots.stream()
                 .mapToInt(Slot::getOffset)
                 .min()
-                .orElse(BlockManager.BLOCK_SIZE);
+                .orElse(Storage.PAGE_SIZE);
     }
 
     protected Slot insertTupleRaw(Tuple tuple) {

@@ -19,9 +19,7 @@ public class AkitaExtension implements BeforeEachCallback, AfterEachCallback, Pa
 
     record Context(
             Path tempDir,
-            FileChannelVFS vfs,
-            FileChannelBlockManager blockManager,
-            FileChannelContainerManager containerManager,
+            FileChannelStorage storage,
             ExecutorService executor,
             BufferPoolManager bpm
     ) {}
@@ -29,9 +27,7 @@ public class AkitaExtension implements BeforeEachCallback, AfterEachCallback, Pa
     @Override
     public void beforeEach(ExtensionContext ctx) throws Exception {
         Path tempDir = Files.createTempDirectory("akita-test-");
-        FileChannelVFS vfs = FileChannelVFS.create(tempDir);
-        FileChannelBlockManager bm = FileChannelBlockManager.create(vfs);
-        FileChannelContainerManager cm = FileChannelContainerManager.create(vfs);
+        FileChannelStorage storage = FileChannelStorage.open(tempDir);
         ExecutorService executor = Executors.newSingleThreadExecutor();
 
         Map<FrameId, Frame> frames = new HashMap<>();
@@ -41,14 +37,14 @@ public class AkitaExtension implements BeforeEachCallback, AfterEachCallback, Pa
         }
 
         BufferPoolManager bpm = BufferPoolManager.create(
-                FCFSDiskScheduler.create(executor, bm),
+                FCFSDiskScheduler.create(executor, storage),
                 ArcReplacer.create(DEFAULT_FRAMES),
                 frames,
                 new HashMap<>()
         );
 
         ctx.getStore(ExtensionContext.Namespace.create(KEY))
-                .put(KEY, new Context(tempDir, vfs, bm, cm, executor, bpm));
+                .put(KEY, new Context(tempDir, storage, executor, bpm));
     }
 
     @Override
@@ -68,9 +64,8 @@ public class AkitaExtension implements BeforeEachCallback, AfterEachCallback, Pa
     public boolean supportsParameter(ParameterContext param, ExtensionContext ctx) {
         Class<?> type = param.getParameter().getType();
         return type == BufferPoolManager.class
-                || type == FileChannelBlockManager.class
-                || type == FileChannelContainerManager.class
-                || type == FileChannelVFS.class;
+                || type == Storage.class
+                || type == FileChannelStorage.class;
     }
 
     @Override
@@ -78,9 +73,7 @@ public class AkitaExtension implements BeforeEachCallback, AfterEachCallback, Pa
         Context c = get(ctx);
         Class<?> type = param.getParameter().getType();
         if (type == BufferPoolManager.class)           return c.bpm();
-        if (type == FileChannelBlockManager.class)     return c.blockManager();
-        if (type == FileChannelContainerManager.class) return c.containerManager();
-        if (type == FileChannelVFS.class) return c.vfs();
+        if (type == Storage.class || type == FileChannelStorage.class) return c.storage();
         throw new IllegalArgumentException("Unknown parameter type: " + type);
     }
 

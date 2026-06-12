@@ -3,7 +3,7 @@ package com.akita.buffer;
 import com.akita.buffer.guards.ReadPageGuard;
 import com.akita.buffer.guards.WritePageGuard;
 import com.akita.buffer.replacers.Replacer;
-import com.akita.storage.BlockManager;
+import com.akita.storage.Storage;
 
 import java.nio.ByteBuffer;
 import java.util.LinkedList;
@@ -51,7 +51,7 @@ public class BufferPoolManager {
 
     private ByteBuffer snapshot(Frame frame) {
         ByteBuffer source = frame.getData();
-        ByteBuffer copy = ByteBuffer.allocate(BlockManager.BLOCK_SIZE);
+        ByteBuffer copy = ByteBuffer.allocate(Storage.PAGE_SIZE);
         copy.put(source);
         copy.clear();
         return copy;
@@ -250,7 +250,7 @@ public class BufferPoolManager {
         Frame frame = frames.get(reservation.frameId());
         prepareFrameForReuse(frame);
 
-        ByteBuffer data = ByteBuffer.allocate(BlockManager.BLOCK_SIZE);
+        ByteBuffer data = ByteBuffer.allocate(Storage.PAGE_SIZE);
 
         return getWritePageGuard(pageId, reservation, frame, data);
     }

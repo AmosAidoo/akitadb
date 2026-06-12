@@ -6,10 +6,8 @@ import com.akita.page.PageHeader;
 import com.akita.page.RecordId;
 import com.akita.page.Slot;
 import com.akita.page.Tuple;
-import com.akita.storage.BlockManager;
+import com.akita.storage.Storage;
 import com.akita.storage.ContainerId;
-import com.akita.storage.FileChannelBlockManager;
-import com.akita.storage.FileChannelContainerManager;
 import com.akita.testing.AkitaExtension;
 import com.akita.testing.ContainerFixture;
 import com.akita.testing.SlottedPageWriter;
@@ -27,13 +25,12 @@ class HeapFileTest {
     @Test
     void getTupleReturnsCorrectData(
             BufferPoolManager bpm,
-            FileChannelBlockManager bm,
-            FileChannelContainerManager cm
+            Storage storage
     ) throws Exception {
-        ContainerId containerId = ContainerFixture.create(bm, cm).createTable();
+        ContainerId containerId = ContainerFixture.create(storage).createTable();
         PageId pageId = new PageId(containerId, 1);
 
-        List<RecordId> records = SlottedPageWriter.create(bm)
+        List<RecordId> records = SlottedPageWriter.create(storage)
                 .addShortTuple((short) 10)
                 .addShortTuple((short) 20)
                 .writeTo(pageId, null);
@@ -47,16 +44,15 @@ class HeapFileTest {
     @Test
     void shouldInsertTupleWhenSpaceIsAvailable(
             BufferPoolManager bpm,
-            FileChannelBlockManager bm,
-            FileChannelContainerManager cm
+            Storage storage
     ) throws Exception {
-        ContainerId containerId = ContainerFixture.create(bm, cm).createTable();
+        ContainerId containerId = ContainerFixture.create(storage).createTable();
 
         // Insert free space map for page 1
         ByteBuffer additionalHeaders = ByteBuffer.allocate(2);
         additionalHeaders.putShort((short) 0);
-        SlottedPageWriter.create(bm)
-                .addPageDirectoryTuple(1, BlockManager.BLOCK_SIZE - PageHeader.SIZE)
+        SlottedPageWriter.create(storage)
+                .addPageDirectoryTuple(1, Storage.PAGE_SIZE - PageHeader.SIZE)
                 .writeTo(new PageId(containerId, 0), tableHeader(), additionalHeaders);
 
         HeapFile heapFile = HeapFile.open(containerId, bpm);
@@ -79,15 +75,14 @@ class HeapFileTest {
     @Test
     void shouldUpdatePageDirectoryAfterInsert(
             BufferPoolManager bpm,
-            FileChannelBlockManager bm,
-            FileChannelContainerManager cm
+            Storage storage
     ) throws Exception {
-        ContainerId containerId = ContainerFixture.create(bm, cm).createTable();
-        int initialFreeSpace = BlockManager.BLOCK_SIZE - PageHeader.SIZE;
+        ContainerId containerId = ContainerFixture.create(storage).createTable();
+        int initialFreeSpace = Storage.PAGE_SIZE - PageHeader.SIZE;
 
         ByteBuffer additionalHeaders = ByteBuffer.allocate(2);
         additionalHeaders.putShort((short) 0);
-        SlottedPageWriter.create(bm)
+        SlottedPageWriter.create(storage)
                 .addPageDirectoryTuple(1, initialFreeSpace)
                 .writeTo(new PageId(containerId, 0), tableHeader(), additionalHeaders);
 
@@ -109,21 +104,20 @@ class HeapFileTest {
     @Test
     void scanTuplesReturnsCursorAcrossHeapPagesAndLazyDirectoryPages(
             BufferPoolManager bpm,
-            FileChannelBlockManager bm,
-            FileChannelContainerManager cm
+            Storage storage
     ) throws Exception {
-        ContainerId containerId = ContainerFixture.create(bm, cm).createTable();
+        ContainerId containerId = ContainerFixture.create(storage).createTable();
 
-        SlottedPageWriter.create(bm)
+        SlottedPageWriter.create(storage)
                 .addPageDirectoryTuple(1, 100)
                 .writeTo(new PageId(containerId, 0), tableHeader(), nextDirectoryHeader(2));
-        SlottedPageWriter.create(bm)
+        SlottedPageWriter.create(storage)
                 .addPageDirectoryTuple(3, 100)
                 .writeTo(new PageId(containerId, 2), nextDirectoryHeader(0));
-        SlottedPageWriter.create(bm)
+        SlottedPageWriter.create(storage)
                 .addShortTuple((short) 10)
                 .writeTo(new PageId(containerId, 1), null);
-        SlottedPageWriter.create(bm)
+        SlottedPageWriter.create(storage)
                 .addShortTuple((short) 20)
                 .writeTo(new PageId(containerId, 3), null);
 
@@ -139,16 +133,15 @@ class HeapFileTest {
     @Test
     void insertCanUseAndUpdatePageFromLazyDirectoryPage(
             BufferPoolManager bpm,
-            FileChannelBlockManager bm,
-            FileChannelContainerManager cm
+            Storage storage
     ) throws Exception {
-        ContainerId containerId = ContainerFixture.create(bm, cm).createTable();
-        int initialFreeSpace = BlockManager.BLOCK_SIZE - PageHeader.SIZE;
+        ContainerId containerId = ContainerFixture.create(storage).createTable();
+        int initialFreeSpace = Storage.PAGE_SIZE - PageHeader.SIZE;
 
-        SlottedPageWriter.create(bm)
+        SlottedPageWriter.create(storage)
                 .addPageDirectoryTuple(1, 0)
                 .writeTo(new PageId(containerId, 0), tableHeader(), nextDirectoryHeader(2));
-        SlottedPageWriter.create(bm)
+        SlottedPageWriter.create(storage)
                 .addPageDirectoryTuple(3, initialFreeSpace)
                 .writeTo(new PageId(containerId, 2), nextDirectoryHeader(0));
 
@@ -168,14 +161,13 @@ class HeapFileTest {
     @Test
     void insertAllocatesDataPageWhenNoPageHasFreeSpace(
             BufferPoolManager bpm,
-            FileChannelBlockManager bm,
-            FileChannelContainerManager cm
+            Storage storage
     ) throws Exception {
-        ContainerId containerId = ContainerFixture.create(bm, cm).createTable();
-        SlottedPageWriter.create(bm)
+        ContainerId containerId = ContainerFixture.create(storage).createTable();
+        SlottedPageWriter.create(storage)
                 .addPageDirectoryTuple(1, 0)
                 .writeTo(new PageId(containerId, 0), tableHeader(), nextDirectoryHeader(0));
-        SlottedPageWriter.create(bm)
+        SlottedPageWriter.create(storage)
                 .writeTo(new PageId(containerId, 1), null);
 
         HeapFile heapFile = HeapFile.open(containerId, bpm);
@@ -188,7 +180,7 @@ class HeapFileTest {
         assertThat(heapFile.getTuple(recordId).readShort()).isEqualTo((short) 123);
         HeapFile freshHeapFile = HeapFile.open(containerId, bpm);
         assertThat(freshHeapFile.pageDirectory.getFreeSpaceForPage(recordId.pageId()))
-                .isEqualTo(BlockManager.BLOCK_SIZE - PageHeader.SIZE - Slot.SERIALIZED_SIZE - Short.BYTES);
+                .isEqualTo(Storage.PAGE_SIZE - PageHeader.SIZE - Slot.SERIALIZED_SIZE - Short.BYTES);
     }
 
     private static ByteBuffer tableHeader() {
