@@ -20,10 +20,8 @@ import com.akita.query.physical.PhysicalPlan;
 import com.akita.query.physical.ProjectionPlan;
 import com.akita.query.physical.SeqScanPlan;
 import com.akita.sql.ast.BinaryOperator;
-import com.akita.storage.BlockManager;
 import com.akita.storage.ContainerId;
-import com.akita.storage.FileChannelBlockManager;
-import com.akita.storage.FileChannelContainerManager;
+import com.akita.storage.Storage;
 import com.akita.testing.AkitaExtension;
 import com.akita.testing.ContainerFixture;
 import com.akita.testing.SlottedPageWriter;
@@ -44,21 +42,20 @@ class ExecutorTest {
     @Test
     void seqScanReturnsAllRowsFromOneTable(
             BufferPoolManager bpm,
-            FileChannelBlockManager bm,
-            FileChannelContainerManager cm
+            Storage storage
     ) throws Exception {
         Schema schema = usersSchema();
-        ContainerId containerId = ContainerFixture.create(bm, cm).createTable();
+        ContainerId containerId = ContainerFixture.create(storage).createTable();
         RowTupleCodec codec = new RowTupleCodec();
         List<Row> rows = List.of(
                 Row.of(new AkitaValue.IntVal(1), new AkitaValue.VarcharVal("Ada"), new AkitaValue.IntVal(42)),
                 Row.of(new AkitaValue.IntVal(2), new AkitaValue.VarcharVal("Grace"), new AkitaValue.IntVal(17))
         );
 
-        SlottedPageWriter.create(bm)
-                .addPageDirectoryTuple(1, BlockManager.BLOCK_SIZE - PageHeader.SIZE)
+        SlottedPageWriter.create(storage)
+                .addPageDirectoryTuple(1, Storage.PAGE_SIZE - PageHeader.SIZE)
                 .writeTo(new PageId(containerId, 0), tableHeader(), pageDirectoryHeader());
-        SlottedPageWriter.create(bm)
+        SlottedPageWriter.create(storage)
                 .addTuple(codec.encode(rows.get(0), schema))
                 .addTuple(codec.encode(rows.get(1), schema))
                 .writeTo(new PageId(containerId, 1), null);

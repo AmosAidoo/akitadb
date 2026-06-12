@@ -13,10 +13,8 @@ import com.akita.heap.HeapFileHeader;
 import com.akita.heap.ObjectType;
 import com.akita.page.RecordId;
 import com.akita.page.Tuple;
-import com.akita.storage.BlockManager;
+import com.akita.storage.Storage;
 import com.akita.storage.ContainerId;
-import com.akita.storage.FileChannelBlockManager;
-import com.akita.storage.FileChannelContainerManager;
 import com.akita.testing.AkitaExtension;
 import com.akita.testing.SlottedPageWriter;
 import org.junit.jupiter.api.Test;
@@ -34,10 +32,9 @@ class BPlusTreeTest {
     @Test
     void createNewInitializesEmptyLeafRoot(
             BufferPoolManager bpm,
-            FileChannelBlockManager bm,
-            FileChannelContainerManager cm
+            Storage storage
     ) throws Exception {
-        ContainerId containerId = createIndexContainer(bm, cm);
+        ContainerId containerId = createIndexContainer(storage);
         IndexMetadata metadata = intIndexMetadata(containerId);
         RecordId rid10 = fakeHeapRid(containerId, 10);
 
@@ -52,15 +49,14 @@ class BPlusTreeTest {
     @Test
     void findsKeyInLeafRoot(
             BufferPoolManager bpm,
-            FileChannelBlockManager bm,
-            FileChannelContainerManager cm
+            Storage storage
     ) throws Exception {
-        ContainerId containerId = createIndexContainer(bm, cm);
+        ContainerId containerId = createIndexContainer(storage);
         IndexMetadata metadata = intIndexMetadata(containerId);
         RecordId rid10 = fakeHeapRid(containerId, 10);
         RecordId rid20 = fakeHeapRid(containerId, 20);
 
-        writeLeaf(bm, metadata, 1,
+        writeLeaf(storage, metadata, 1,
                 leafKey(10, rid10),
                 leafKey(20, rid20)
         );
@@ -74,23 +70,22 @@ class BPlusTreeTest {
     @Test
     void findsKeyThroughInternalRoot(
             BufferPoolManager bpm,
-            FileChannelBlockManager bm,
-            FileChannelContainerManager cm
+            Storage storage
     ) throws Exception {
-        ContainerId containerId = createIndexContainer(bm, cm);
+        ContainerId containerId = createIndexContainer(storage);
         IndexMetadata metadata = intIndexMetadata(containerId);
         RecordId rid5 = fakeHeapRid(containerId, 5);
         RecordId rid10 = fakeHeapRid(containerId, 10);
         RecordId rid20 = fakeHeapRid(containerId, 20);
         RecordId rid30 = fakeHeapRid(containerId, 30);
 
-        writeInternal(bm, metadata, 1, 4,
+        writeInternal(storage, metadata, 1, 4,
                 internalKey(10, 2),
                 internalKey(20, 3)
         );
-        writeLeaf(bm, metadata, 2, leafKey(5, rid5));
-        writeLeaf(bm, metadata, 3, leafKey(10, rid10), leafKey(15, fakeHeapRid(containerId, 15)));
-        writeLeaf(bm, metadata, 4, leafKey(20, rid20), leafKey(30, rid30));
+        writeLeaf(storage, metadata, 2, leafKey(5, rid5));
+        writeLeaf(storage, metadata, 3, leafKey(10, rid10), leafKey(15, fakeHeapRid(containerId, 15)));
+        writeLeaf(storage, metadata, 4, leafKey(20, rid20), leafKey(30, rid30));
 
         BPlusTree tree = BPlusTree.open(metadata, bpm);
 
@@ -103,19 +98,18 @@ class BPlusTreeTest {
     @Test
     void dumpsTreeAsGraphVizDot(
             BufferPoolManager bpm,
-            FileChannelBlockManager bm,
-            FileChannelContainerManager cm
+            Storage storage
     ) throws Exception {
-        ContainerId containerId = createIndexContainer(bm, cm);
+        ContainerId containerId = createIndexContainer(storage);
         IndexMetadata metadata = intIndexMetadata(containerId);
 
-        writeInternal(bm, metadata, 1, 4,
+        writeInternal(storage, metadata, 1, 4,
                 internalKey(10, 2),
                 internalKey(20, 3)
         );
-        writeLeaf(bm, metadata, 2, 3, leafKey(5, fakeHeapRid(containerId, 5)));
-        writeLeaf(bm, metadata, 3, 4, leafKey(10, fakeHeapRid(containerId, 10)));
-        writeLeaf(bm, metadata, 4, leafKey(20, fakeHeapRid(containerId, 20)));
+        writeLeaf(storage, metadata, 2, 3, leafKey(5, fakeHeapRid(containerId, 5)));
+        writeLeaf(storage, metadata, 3, 4, leafKey(10, fakeHeapRid(containerId, 10)));
+        writeLeaf(storage, metadata, 4, leafKey(20, fakeHeapRid(containerId, 20)));
 
         BPlusTree tree = BPlusTree.open(metadata, bpm);
 
@@ -140,15 +134,14 @@ class BPlusTreeTest {
     @Test
     void insertsIntoNonFullLeafRoot(
             BufferPoolManager bpm,
-            FileChannelBlockManager bm,
-            FileChannelContainerManager cm
+            Storage storage
     ) throws Exception {
-        ContainerId containerId = createIndexContainer(bm, cm);
+        ContainerId containerId = createIndexContainer(storage);
         IndexMetadata metadata = intIndexMetadata(containerId);
         RecordId rid10 = fakeHeapRid(containerId, 10);
         RecordId rid20 = fakeHeapRid(containerId, 20);
 
-        writeLeaf(bm, metadata, 1, leafKey(10, rid10));
+        writeLeaf(storage, metadata, 1, leafKey(10, rid10));
 
         BPlusTree tree = BPlusTree.open(metadata, bpm);
         tree.insert(leafKey(20, rid20));
@@ -160,10 +153,9 @@ class BPlusTreeTest {
     @Test
     void splitsFullLeafRoot(
             BufferPoolManager bpm,
-            FileChannelBlockManager bm,
-            FileChannelContainerManager cm
+            Storage storage
     ) throws Exception {
-        ContainerId containerId = createIndexContainer(bm, cm);
+        ContainerId containerId = createIndexContainer(storage);
         IndexMetadata metadata = varcharIndexMetadata(containerId);
         List<LeafBTreeKey> initialKeys = new ArrayList<>();
         for (int i = 0; i < 16; i++) {
@@ -171,7 +163,7 @@ class BPlusTreeTest {
         }
         LeafBTreeKey insertedKey = leafKey(paddedKey(16), fakeHeapRid(containerId, 16));
 
-        writeLeaf(bm, metadata, 1, initialKeys.toArray(LeafBTreeKey[]::new));
+        writeLeaf(storage, metadata, 1, initialKeys.toArray(LeafBTreeKey[]::new));
 
         BPlusTree tree = BPlusTree.open(metadata, bpm);
         tree.insert(insertedKey);
@@ -192,19 +184,18 @@ class BPlusTreeTest {
     @Test
     void scanRangeFollowsLeafSiblingPointers(
             BufferPoolManager bpm,
-            FileChannelBlockManager bm,
-            FileChannelContainerManager cm
+            Storage storage
     ) throws Exception {
-        ContainerId containerId = createIndexContainer(bm, cm);
+        ContainerId containerId = createIndexContainer(storage);
         IndexMetadata metadata = intIndexMetadata(containerId);
         RecordId rid5 = fakeHeapRid(containerId, 5);
         RecordId rid10 = fakeHeapRid(containerId, 10);
         RecordId rid20 = fakeHeapRid(containerId, 20);
         RecordId rid30 = fakeHeapRid(containerId, 30);
 
-        writeInternal(bm, metadata, 1, 3, internalKey(20, 2));
-        writeLeaf(bm, metadata, 2, 3, leafKey(5, rid5), leafKey(10, rid10));
-        writeLeaf(bm, metadata, 3, leafKey(20, rid20), leafKey(30, rid30));
+        writeInternal(storage, metadata, 1, 3, internalKey(20, 2));
+        writeLeaf(storage, metadata, 2, 3, leafKey(5, rid5), leafKey(10, rid10));
+        writeLeaf(storage, metadata, 3, leafKey(20, rid20), leafKey(30, rid30));
 
         BPlusTree tree = BPlusTree.open(metadata, bpm);
 
@@ -215,10 +206,9 @@ class BPlusTreeTest {
     @Test
     void initializesAllocatedLeafPage(
             BufferPoolManager bpm,
-            FileChannelBlockManager bm,
-            FileChannelContainerManager cm
+            Storage storage
     ) throws Exception {
-        ContainerId containerId = createIndexContainer(bm, cm);
+        ContainerId containerId = createIndexContainer(storage);
         IndexMetadata metadata = intIndexMetadata(containerId);
         PageId pageId = new PageId(containerId, 5);
 
@@ -238,10 +228,9 @@ class BPlusTreeTest {
     @Test
     void initializesAllocatedInternalPage(
             BufferPoolManager bpm,
-            FileChannelBlockManager bm,
-            FileChannelContainerManager cm
+            Storage storage
     ) throws Exception {
-        ContainerId containerId = createIndexContainer(bm, cm);
+        ContainerId containerId = createIndexContainer(storage);
         IndexMetadata metadata = intIndexMetadata(containerId);
         PageId pageId = new PageId(containerId, 5);
 
@@ -263,17 +252,16 @@ class BPlusTreeTest {
     @Test
     void rewritesLeafTuples(
             BufferPoolManager bpm,
-            FileChannelBlockManager bm,
-            FileChannelContainerManager cm
+            Storage storage
     ) throws Exception {
-        ContainerId containerId = createIndexContainer(bm, cm);
+        ContainerId containerId = createIndexContainer(storage);
         IndexMetadata metadata = intIndexMetadata(containerId);
         RecordId rid10 = fakeHeapRid(containerId, 10);
         RecordId rid20 = fakeHeapRid(containerId, 20);
         RecordId rid30 = fakeHeapRid(containerId, 30);
         PageId pageId = new PageId(containerId, 1);
 
-        writeLeaf(bm, metadata, 1,
+        writeLeaf(storage, metadata, 1,
                 leafKey(10, rid10),
                 leafKey(20, rid20),
                 leafKey(30, rid30)
@@ -297,10 +285,9 @@ class BPlusTreeTest {
     @Test
     void splitsNonRootLeafIntoNonFullParent(
             BufferPoolManager bpm,
-            FileChannelBlockManager bm,
-            FileChannelContainerManager cm
+            Storage storage
     ) throws Exception {
-        ContainerId containerId = createIndexContainer(bm, cm);
+        ContainerId containerId = createIndexContainer(storage);
         IndexMetadata metadata = varcharIndexMetadata(containerId);
         List<LeafBTreeKey> initialKeys = new ArrayList<>();
         for (int i = 0; i < 16; i++) {
@@ -309,10 +296,16 @@ class BPlusTreeTest {
         LeafBTreeKey insertedKey = leafKey(paddedKey(16), fakeHeapRid(containerId, 16));
         LeafBTreeKey rightTreeKey = leafKey(paddedKey(50), fakeHeapRid(containerId, 50));
 
-        writeInternal(bm, metadata, 1, 3, internalKey(paddedKey(50), 2));
-        writeLeaf(bm, metadata, 2, initialKeys.toArray(LeafBTreeKey[]::new));
-        writeLeaf(bm, metadata, 3, rightTreeKey);
-        writeIndexPageDirectory(bm, containerId, 1, 2, 3);
+        writeInternal(storage, metadata, 1, 3, internalKey(paddedKey(50), 2));
+        writeLeaf(storage, metadata, 2, initialKeys.toArray(LeafBTreeKey[]::new));
+        writeLeaf(storage, metadata, 3, rightTreeKey);
+        writeIndexPageDirectory(
+                storage,
+                containerId,
+                1,
+                2,
+                3
+        );
 
         BPlusTree tree = BPlusTree.open(metadata, bpm);
         tree.insert(insertedKey);
@@ -334,10 +327,9 @@ class BPlusTreeTest {
     @Test
     void splitsFullRootInternalWhenLeafPromotesIntoIt(
             BufferPoolManager bpm,
-            FileChannelBlockManager bm,
-            FileChannelContainerManager cm
+            Storage storage
     ) throws Exception {
-        ContainerId containerId = createIndexContainer(bm, cm);
+        ContainerId containerId = createIndexContainer(storage);
         IndexMetadata metadata = varcharIndexMetadata(containerId);
         List<LeafBTreeKey> leftmostKeys = new ArrayList<>();
         for (int i = 0; i < 16; i++) {
@@ -355,13 +347,13 @@ class BPlusTreeTest {
         }
         existingBlocks.add(18L);
 
-        writeInternal(bm, metadata, 1, 18, rootEntries.toArray(InternalEntry[]::new));
-        writeLeaf(bm, metadata, 2, leftmostKeys.toArray(LeafBTreeKey[]::new));
+        writeInternal(storage, metadata, 1, 18, rootEntries.toArray(InternalEntry[]::new));
+        writeLeaf(storage, metadata, 2, leftmostKeys.toArray(LeafBTreeKey[]::new));
         for (int i = 0; i < 16; i++) {
-            writeLeaf(bm, metadata, i + 3L, leafKey(paddedKey(50 + i), fakeHeapRid(containerId, 50 + i)));
+            writeLeaf(storage, metadata, i + 3L, leafKey(paddedKey(50 + i), fakeHeapRid(containerId, 50 + i)));
         }
         writeIndexPageDirectory(
-                bm,
+                storage,
                 containerId,
                 existingBlocks.stream().mapToLong(Long::longValue).toArray()
         );
@@ -382,15 +374,14 @@ class BPlusTreeTest {
     }
 
     private static ContainerId createIndexContainer(
-            FileChannelBlockManager bm,
-            FileChannelContainerManager cm
+            Storage storage
     ) throws Exception {
-        ContainerId containerId = cm.createContainer();
-        ByteBuffer firstPage = ByteBuffer.allocate(BlockManager.BLOCK_SIZE);
+        ContainerId containerId = storage.createContainer();
+        ByteBuffer firstPage = ByteBuffer.allocate(Storage.PAGE_SIZE);
         HeapFileHeader.write(firstPage, ObjectType.INDEX);
         firstPage.putShort((short) 0); // page-directory slots
         firstPage.putShort((short) 0); // no next page directory
-        bm.writeBlock(containerId, 0, firstPage);
+        storage.write(new PageId(containerId, 0), firstPage);
         return containerId;
     }
 
@@ -415,22 +406,22 @@ class BPlusTreeTest {
     }
 
     private static void writeLeaf(
-            FileChannelBlockManager bm,
+            Storage storage,
             IndexMetadata metadata,
             long blockNumber,
             LeafBTreeKey... keys
     ) throws Exception {
-        writeLeaf(bm, metadata, blockNumber, BPlusTreePage.NO_NEXT_LEAF, keys);
+        writeLeaf(storage, metadata, blockNumber, BPlusTreePage.NO_NEXT_LEAF, keys);
     }
 
     private static void writeLeaf(
-            FileChannelBlockManager bm,
+            Storage storage,
             IndexMetadata metadata,
             long blockNumber,
             long nextLeafBlockNumber,
             LeafBTreeKey... keys
     ) throws Exception {
-        SlottedPageWriter writer = SlottedPageWriter.create(bm);
+        SlottedPageWriter writer = SlottedPageWriter.create(storage);
         for (LeafBTreeKey key : keys) {
             writer.addTuple(TupleSerializer.serializeLeaf(key, metadata));
         }
@@ -438,13 +429,13 @@ class BPlusTreeTest {
     }
 
     private static void writeInternal(
-            FileChannelBlockManager bm,
+            Storage storage,
             IndexMetadata metadata,
             long blockNumber,
             long rightmostChildBlockNumber,
             InternalEntry... entries
     ) throws Exception {
-        SlottedPageWriter writer = SlottedPageWriter.create(bm);
+        SlottedPageWriter writer = SlottedPageWriter.create(storage);
         for (InternalEntry entry : entries) {
             writer.addTuple(TupleSerializer.serializeInternal(entry.key(), entry.leftChildBlockNumber(), metadata));
         }
@@ -452,7 +443,7 @@ class BPlusTreeTest {
     }
 
     private static void writeIndexPageDirectory(
-            FileChannelBlockManager bm,
+            Storage storage,
             ContainerId containerId,
             long... blockNumbers
     ) throws Exception {
@@ -461,7 +452,7 @@ class BPlusTreeTest {
         ByteBuffer additionalHeaders = ByteBuffer.allocate(Short.BYTES);
         additionalHeaders.putShort((short) 0);
 
-        SlottedPageWriter writer = SlottedPageWriter.create(bm);
+        SlottedPageWriter writer = SlottedPageWriter.create(storage);
         for (long blockNumber : blockNumbers) {
             writer.addPageDirectoryTuple(blockNumber, 0);
         }

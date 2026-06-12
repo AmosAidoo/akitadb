@@ -8,8 +8,7 @@ import com.akita.buffer.PageId;
 import com.akita.buffer.replacers.arc.ArcReplacer;
 import com.akita.catalog.JsonCatalog;
 import com.akita.query.QueryEngine;
-import com.akita.storage.FileChannelBlockManager;
-import com.akita.storage.FileChannelVFS;
+import com.akita.storage.FileChannelStorage;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -51,11 +50,10 @@ public final class AkitaDatabase implements AutoCloseable {
                 Files.writeString(catalogPath, EMPTY_CATALOG);
             }
 
-            FileChannelVFS vfs = FileChannelVFS.create(dataDirectory);
-            FileChannelBlockManager blockManager = FileChannelBlockManager.create(vfs);
+            FileChannelStorage storage = FileChannelStorage.open(dataDirectory);
             ExecutorService executor = Executors.newSingleThreadExecutor();
             BufferPoolManager bufferPoolManager = BufferPoolManager.create(
-                    FCFSDiskScheduler.create(executor, blockManager),
+                    FCFSDiskScheduler.create(executor, storage),
                     ArcReplacer.create(DEFAULT_BUFFER_FRAMES),
                     frames(DEFAULT_BUFFER_FRAMES),
                     new HashMap<PageId, Frame>()

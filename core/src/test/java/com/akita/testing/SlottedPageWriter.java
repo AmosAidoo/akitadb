@@ -4,23 +4,22 @@ import com.akita.buffer.PageId;
 import com.akita.page.RecordId;
 import com.akita.page.Slot;
 import com.akita.page.Tuple;
-import com.akita.storage.BlockManager;
-import com.akita.storage.FileChannelBlockManager;
+import com.akita.storage.Storage;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 
 public class SlottedPageWriter {
-    private final FileChannelBlockManager blockManager;
+    private final Storage storage;
     private final List<byte[]> tuples = new ArrayList<>();
 
-    private SlottedPageWriter(FileChannelBlockManager blockManager) {
-        this.blockManager = blockManager;
+    private SlottedPageWriter(Storage storage) {
+        this.storage = storage;
     }
 
-    public static SlottedPageWriter create(FileChannelBlockManager blockManager) {
-        return new SlottedPageWriter(blockManager);
+    public static SlottedPageWriter create(Storage storage) {
+        return new SlottedPageWriter(storage);
     }
 
     public SlottedPageWriter addShortTuple(short value) {
@@ -48,7 +47,7 @@ public class SlottedPageWriter {
     }
 
     public List<RecordId> writeTo(PageId pageId, ByteBuffer prefixHeaders, ByteBuffer additionalHeaders) throws Exception {
-        ByteBuffer page = ByteBuffer.allocate(BlockManager.BLOCK_SIZE);
+        ByteBuffer page = ByteBuffer.allocate(Storage.PAGE_SIZE);
 
         if (prefixHeaders != null) {
             prefixHeaders.clear();
@@ -64,7 +63,7 @@ public class SlottedPageWriter {
 
         // Compute slot offsets growing from the end of the page
         List<Slot> slots = new ArrayList<>();
-        int tail = BlockManager.BLOCK_SIZE;
+        int tail = Storage.PAGE_SIZE;
         for (short i = 0; i < tuples.size(); i++) {
             byte[] tuple = tuples.get(i);
             tail -= tuple.length;
@@ -82,7 +81,7 @@ public class SlottedPageWriter {
             page.put(slots.get(i).getOffset(), tuples.get(i));
         }
 
-        blockManager.writeBlock(pageId.containerId(), pageId.blockNumber(), page);
+        storage.write(pageId, page);
 
         // Return RecordIds in insertion order
         List<RecordId> records = new ArrayList<>();

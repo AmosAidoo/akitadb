@@ -1,6 +1,6 @@
 package com.akita.buffer;
 
-import com.akita.storage.BlockManager;
+import com.akita.storage.Storage;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -8,23 +8,23 @@ import java.nio.ByteBuffer;
 public class WriteRequest implements Runnable {
     private final PageId pageId;
     private final ByteBuffer buffer;
-    private final BlockManager blockManager;
+    private final Storage storage;
 
-    private WriteRequest(PageId pageId, ByteBuffer buffer, BlockManager blockManager) {
+    private WriteRequest(PageId pageId, ByteBuffer buffer, Storage storage) {
         this.pageId = pageId;
         this.buffer = buffer;
-        this.blockManager = blockManager;
+        this.storage = storage;
     }
 
-    public static WriteRequest create(PageId pageId, ByteBuffer buffer, BlockManager blockManager) {
-        return new WriteRequest(pageId, buffer, blockManager);
+    public static WriteRequest create(PageId pageId, ByteBuffer buffer, Storage storage) {
+        return new WriteRequest(pageId, buffer, storage);
     }
 
     @Override
     public void run() {
         try {
-            synchronized (blockManager) {
-                blockManager.writeBlock(pageId.containerId(), pageId.blockNumber(), buffer);
+            synchronized (storage) {
+                storage.write(pageId, buffer);
             }
         } catch (IOException e) {
             throw new IllegalStateException("Unable to write page: " + pageId, e);

@@ -1,22 +1,22 @@
 package com.akita.testing;
 
-import com.akita.storage.*;
+import com.akita.buffer.PageId;
 import com.akita.heap.HeapFileHeader;
 import com.akita.heap.ObjectType;
+import com.akita.storage.ContainerId;
+import com.akita.storage.Storage;
 
 import java.nio.ByteBuffer;
 
 public class ContainerFixture {
-    private final FileChannelBlockManager blockManager;
-    private final FileChannelContainerManager containerManager;
+    private final Storage storage;
 
-    private ContainerFixture(FileChannelBlockManager bm, FileChannelContainerManager cm) {
-        this.blockManager = bm;
-        this.containerManager = cm;
+    private ContainerFixture(Storage storage) {
+        this.storage = storage;
     }
 
-    public static ContainerFixture create(FileChannelBlockManager bm, FileChannelContainerManager cm) {
-        return new ContainerFixture(bm, cm);
+    public static ContainerFixture create(Storage storage) {
+        return new ContainerFixture(storage);
     }
 
     /**
@@ -24,19 +24,19 @@ public class ContainerFixture {
      * header followed by an empty page directory.
      */
     public ContainerId createTable() throws Exception {
-        ContainerId id = containerManager.createContainer();
+        ContainerId id = storage.createContainer();
         writeFirstPageDirectory(id);
         return id;
     }
 
     private void writeFirstPageDirectory(ContainerId id) throws Exception {
-        ByteBuffer buf = ByteBuffer.allocate(BlockManager.BLOCK_SIZE);
+        ByteBuffer buf = ByteBuffer.allocate(Storage.PAGE_SIZE);
         // Container header: ObjectType.TABLE = 0
         HeapFileHeader.write(buf, ObjectType.TABLE);
         // SlottedPage header: numberOfSlots = 0
         buf.putShort((short) 0);
         // PageDirectory extended header: nextBlockPointer = 0 (no next dir page)
         buf.putShort((short) 0);
-        blockManager.writeBlock(id, 0, buf);
+        storage.write(new PageId(id, 0), buf);
     }
 }

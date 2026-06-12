@@ -3,7 +3,8 @@ package com.akita.buffer;
 import com.akita.buffer.guards.ReadPageGuard;
 import com.akita.buffer.guards.WritePageGuard;
 import com.akita.buffer.replacers.arc.ArcReplacer;
-import com.akita.storage.*;
+import com.akita.storage.ContainerId;
+import com.akita.storage.Storage;
 import com.akita.testing.AkitaExtension;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -22,10 +23,10 @@ class BufferPoolManagerTest {
     @Test
     void veryBasicTest(
             BufferPoolManager bpm,
-            FileChannelContainerManager cm
+            Storage storage
     ) throws Exception {
 
-        ContainerId containerId = cm.createContainer();
+        ContainerId containerId = storage.createContainer();
         PageId pageId = new PageId(containerId, 0);
         final String expected = "Hello world";
 
@@ -58,9 +59,9 @@ class BufferPoolManagerTest {
     @Test
     void allocatePageReturnsZeroedWritablePage(
             BufferPoolManager bpm,
-            FileChannelContainerManager cm
+            Storage storage
     ) throws Exception {
-        ContainerId containerId = cm.createContainer();
+        ContainerId containerId = storage.createContainer();
         PageId pageId = new PageId(containerId, 3);
 
         try (WritePageGuard guard = bpm.allocatePage(pageId)) {
@@ -76,11 +77,10 @@ class BufferPoolManagerTest {
 
     @Test
     void evictingDirtyPageFlushesItBeforeReusingFrame(
-            FileChannelBlockManager bm,
-            FileChannelContainerManager cm
+            Storage storage
     ) throws Exception {
-        BufferPoolManager bpm = bufferPoolManagerWithFrames(bm, 1);
-        ContainerId containerId = cm.createContainer();
+        BufferPoolManager bpm = bufferPoolManagerWithFrames(storage, 1);
+        ContainerId containerId = storage.createContainer();
         PageId firstPage = new PageId(containerId, 0);
         PageId secondPage = new PageId(containerId, 1);
 
@@ -92,9 +92,7 @@ class BufferPoolManagerTest {
             // Allocating another page with one frame forces the first dirty page out.
         }
 
-        ByteBuffer persisted = ByteBuffer.allocate(BlockManager.BLOCK_SIZE);
-        bm.readBlock(containerId, 0, persisted);
-        persisted.clear();
+        ByteBuffer persisted = storage.read(firstPage);
 
         assertThat(persisted.getInt()).isEqualTo(1234);
     }
@@ -102,10 +100,9 @@ class BufferPoolManagerTest {
     @Test
     void flushAllPagesWritesDirtyPages(
             BufferPoolManager bpm,
-            FileChannelBlockManager bm,
-            FileChannelContainerManager cm
+            Storage storage
     ) throws Exception {
-        ContainerId containerId = cm.createContainer();
+        ContainerId containerId = storage.createContainer();
         PageId pageId = new PageId(containerId, 0);
 
         try (WritePageGuard guard = bpm.allocatePage(pageId)) {
@@ -114,14 +111,12 @@ class BufferPoolManagerTest {
 
         bpm.flushAllPages();
 
-        ByteBuffer persisted = ByteBuffer.allocate(BlockManager.BLOCK_SIZE);
-        bm.readBlock(containerId, 0, persisted);
-        persisted.clear();
+        ByteBuffer persisted = storage.read(pageId);
 
         assertThat(persisted.getInt()).isEqualTo(5678);
     }
 
-    private static BufferPoolManager bufferPoolManagerWithFrames(FileChannelBlockManager bm, int frameCount) {
+    private static BufferPoolManager bufferPoolManagerWithFrames(Storage storage, int frameCount) {
         Map<FrameId, Frame> frames = new HashMap<>();
         for (int i = 0; i < frameCount; i++) {
             FrameId id = new FrameId(i);
@@ -129,7 +124,7 @@ class BufferPoolManagerTest {
         }
 
         return BufferPoolManager.create(
-                FCFSDiskScheduler.create(Executors.newSingleThreadExecutor(), bm),
+                FCFSDiskScheduler.create(Executors.newSingleThreadExecutor(), storage),
                 ArcReplacer.create(frameCount),
                 frames,
                 new HashMap<>()
