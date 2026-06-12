@@ -7,7 +7,6 @@ import com.akita.buffer.guards.WritePageGuard;
 import com.akita.page.PageDirectory;
 import com.akita.page.PageHeader;
 import com.akita.page.RecordId;
-import com.akita.page.Slot;
 import com.akita.page.Tuple;
 import com.akita.storage.ContainerId;
 
@@ -41,7 +40,7 @@ public class HeapFile {
 
     public Tuple getTuple(RecordId recordId) throws Exception {
         try (HeapPage heapPage = HeapPage.create(bufferPoolManager.readPage(recordId.pageId()))) {
-            return heapPage.getTuple(recordId.slotOffset());
+            return heapPage.getTuple(recordId.slotIndex());
         }
     }
 
@@ -61,23 +60,23 @@ public class HeapFile {
         PageId targetPage = findPageWithTargetSpace(targetSpace);
         if (targetPage != null) {
             int remainingFreeSpace;
-            Slot slot;
+            short slotIndex;
             try (HeapPage heapPage = HeapPage.create(bufferPoolManager.writePage(targetPage))) {
-                slot = heapPage.insertTuple(tuple);
+                slotIndex = heapPage.insertTuple(tuple);
                 remainingFreeSpace = heapPage.getFreeSpace();
             }
             updatePageDirectoryEntry(targetPage, remainingFreeSpace);
-            return new RecordId(targetPage, slot.getOffset());
+            return new RecordId(targetPage, slotIndex);
         }
         PageId newPage = allocateDataPage();
         int remainingFreeSpace;
-        Slot slot;
+        short slotIndex;
         try (HeapPage heapPage = HeapPage.create(bufferPoolManager.writePage(newPage))) {
-            slot = heapPage.insertTuple(tuple);
+            slotIndex = heapPage.insertTuple(tuple);
             remainingFreeSpace = heapPage.getFreeSpace();
         }
         addPageDirectoryEntry(newPage, remainingFreeSpace);
-        return new RecordId(newPage, slot.getOffset());
+        return new RecordId(newPage, slotIndex);
     }
 
     private PageId allocateDataPage() throws Exception {
@@ -168,12 +167,12 @@ public class HeapFile {
                 dir.parsePage(dirData);
             }
 
-            for (Slot slot : dir.getSlots()) {
-                Tuple entry = dir.getTuple(slot.getOffset());
+            for (int i = 0; i < dir.tupleCount(); i++) {
+                Tuple entry = dir.tupleAt(i);
                 long blockNumber = entry.readLong();
                 if (blockNumber == targetPage.blockNumber()) {
                     Tuple updated = PageDirectory.createTuple(blockNumber, newFreeSpace);
-                    dir.updateTuple(slot, updated);
+                    dir.updateTuple(i, updated);
                     return true;
                 }
             }

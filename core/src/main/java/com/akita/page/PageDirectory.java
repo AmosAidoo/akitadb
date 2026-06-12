@@ -89,8 +89,8 @@ public class PageDirectory extends SlottedPage {
         // The tuples in a page directory are of the format (blockNumber, freeSpace)
         PageDirectory current = this;
         while (current != null) {
-            for (Slot slot : current.slots) {
-                Tuple tuple = current.getTuple(slot.getOffset());
+            for (int i = 0; i < current.tupleCount(); i++) {
+                Tuple tuple = current.tupleAt(i);
                 long blockNumber = tuple.readLong();
                 int freeSpace = tuple.readInt();
                 if (freeSpace >= targetSpace) {
@@ -102,20 +102,17 @@ public class PageDirectory extends SlottedPage {
         return null;
     }
 
-    public PageId dataPageId(Slot slot) {
-        Tuple tuple = getTuple(slot.getOffset());
+    public PageId dataPageId(int slotIndex) {
+        Tuple tuple = tupleAt(slotIndex);
         return new PageId(containerId, tuple.readLong());
     }
 
     public void insertEntry(Tuple tuple) {
-        insertTupleRaw(tuple);
+        appendTuple(tuple);
     }
 
     public void cacheInsertedEntry(Tuple tuple) {
-        int lastOffsetBase = lowestTupleOffset();
-        Slot newSlot = Slot.create((short) slots.size(), (short) (lastOffsetBase - tuple.size()), (short) tuple.size());
-        slots.add(newSlot);
-        pageHeader.setNumberOfSlots((short) slots.size());
+        cacheAppendedTuple(tuple);
     }
 
     public PageId pageId() {
@@ -143,11 +140,6 @@ public class PageDirectory extends SlottedPage {
         this.nextBlockPointer = (short) next.pageId().blockNumber();
     }
 
-    @Override
-    public Tuple getTuple(short offset) {
-        return super.getTuple(offset);
-    }
-
     public static Tuple createTuple(long blockNumber, int freeSpace) {
         ByteBuffer buf = ByteBuffer.allocate(Long.BYTES + Integer.BYTES);
         buf.putLong(blockNumber);
@@ -159,8 +151,8 @@ public class PageDirectory extends SlottedPage {
     public long getFreeSpaceForPage(PageId pageId) throws Exception {
         PageDirectory current = this;
         while (current != null) {
-            for (Slot slot : current.slots) {
-                Tuple entry = current.getTuple(slot.getOffset());
+            for (int i = 0; i < current.tupleCount(); i++) {
+                Tuple entry = current.tupleAt(i);
                 long blockNumber = entry.readLong();
                 int freeSpace = entry.readInt();
                 if (blockNumber == pageId.blockNumber()) {
@@ -177,8 +169,8 @@ public class PageDirectory extends SlottedPage {
         PageDirectory current = this;
 
         while (current != null) {
-            for (Slot slot : current.getSlots()) {
-                Tuple entry = current.getTuple(slot.getOffset());
+            for (int i = 0; i < current.tupleCount(); i++) {
+                Tuple entry = current.tupleAt(i);
                 long blockNumber = entry.readLong();
                 if (blockNumber > highest) {
                     highest = blockNumber;

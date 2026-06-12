@@ -36,7 +36,7 @@ public record LeafBTreeKey(List<AkitaValue> columns, RecordId rid)
     }
 
     // Leaf tuple layout:
-    // | indexed_cols... | containerId MSB (long) | containerId LSB (long) | blockNumber (long) | slotNumber (short) |
+    // | indexed_cols... | containerId MSB (long) | containerId LSB (long) | blockNumber (long) | slotIndex (short) |
     public static LeafBTreeKey ofLeaf(Tuple tuple, IndexMetadata meta) {
         tuple.clear();
         List<AkitaValue> columns = BTreeKey.readColumns(tuple, meta);
@@ -44,11 +44,11 @@ public record LeafBTreeKey(List<AkitaValue> columns, RecordId rid)
         long msb         = tuple.readLong();
         long lsb         = tuple.readLong();
         long blockNumber = tuple.readLong();
-        short slotNumber = tuple.readShort();
+        short slotIndex = tuple.readShort();
 
         RecordId rid = new RecordId(
                 new PageId(ContainerId.fromUUID(new UUID(msb, lsb)), blockNumber),
-                slotNumber
+                slotIndex
         );
 
         return new LeafBTreeKey(List.copyOf(columns), rid);

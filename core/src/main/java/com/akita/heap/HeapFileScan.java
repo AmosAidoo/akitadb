@@ -2,10 +2,8 @@ package com.akita.heap;
 
 import com.akita.buffer.BufferPoolManager;
 import com.akita.page.PageDirectory;
-import com.akita.page.Slot;
 import com.akita.page.Tuple;
 
-import java.util.List;
 import java.util.Optional;
 
 public class HeapFileScan implements AutoCloseable {
@@ -13,7 +11,7 @@ public class HeapFileScan implements AutoCloseable {
     private PageDirectory currentDirectory;
     private int directorySlotIndex;
     private HeapPage currentHeapPage;
-    private List<Slot> currentTupleSlots = List.of();
+    private int currentTupleCount;
     private int tupleSlotIndex;
 
     HeapFileScan(PageDirectory firstDirectory, BufferPoolManager bufferPoolManager) {
@@ -23,9 +21,8 @@ public class HeapFileScan implements AutoCloseable {
 
     public Optional<Tuple> next() throws Exception {
         while (true) {
-            if (currentHeapPage != null && tupleSlotIndex < currentTupleSlots.size()) {
-                Slot slot = currentTupleSlots.get(tupleSlotIndex++);
-                return Optional.of(currentHeapPage.getTuple(slot.getOffset()));
+            if (currentHeapPage != null && tupleSlotIndex < currentTupleCount) {
+                return Optional.of(currentHeapPage.getTuple((short) tupleSlotIndex++));
             }
 
             closeCurrentHeapPage();
@@ -37,13 +34,11 @@ public class HeapFileScan implements AutoCloseable {
 
     private boolean openNextHeapPage() throws Exception {
         while (currentDirectory != null) {
-            List<Slot> directorySlots = currentDirectory.getSlots();
-            if (directorySlotIndex < directorySlots.size()) {
-                Slot directorySlot = directorySlots.get(directorySlotIndex++);
+            if (directorySlotIndex < currentDirectory.tupleCount()) {
                 currentHeapPage = HeapPage.create(
-                        bufferPoolManager.readPage(currentDirectory.dataPageId(directorySlot))
+                        bufferPoolManager.readPage(currentDirectory.dataPageId(directorySlotIndex++))
                 );
-                currentTupleSlots = currentHeapPage.getSlots();
+                currentTupleCount = currentHeapPage.tupleCount();
                 tupleSlotIndex = 0;
                 return true;
             }
@@ -58,7 +53,7 @@ public class HeapFileScan implements AutoCloseable {
         if (currentHeapPage != null) {
             currentHeapPage.close();
             currentHeapPage = null;
-            currentTupleSlots = List.of();
+            currentTupleCount = 0;
             tupleSlotIndex = 0;
         }
     }
