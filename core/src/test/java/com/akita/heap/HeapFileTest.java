@@ -18,6 +18,7 @@ import java.nio.ByteBuffer;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @ExtendWith(AkitaExtension.class)
 class HeapFileTest {
@@ -37,6 +38,8 @@ class HeapFileTest {
 
         HeapFile heapFile = HeapFile.open(containerId, bpm);
 
+        assertThat(records).extracting(RecordId::slotIndex)
+                .containsExactly((short) 0, (short) 1);
         assertThat(heapFile.getTuple(records.get(0)).readShort()).isEqualTo((short) 10);
         assertThat(heapFile.getTuple(records.get(1)).readShort()).isEqualTo((short) 20);
     }
@@ -62,6 +65,7 @@ class HeapFileTest {
         buffer.putShort((short) 10);
         RecordId recordId = heapFile.insertTuple(new Tuple(buffer));
         assertThat(recordId).isNotNull();
+        assertThat(recordId.slotIndex()).isZero();
         assertThat(heapFile.getTuple(recordId).readShort()).isEqualTo((short) 10);
 
         // Insert number 20
@@ -69,7 +73,25 @@ class HeapFileTest {
         buffer.putShort((short) 20);
         recordId = heapFile.insertTuple(new Tuple(buffer));
         assertThat(recordId).isNotNull();
+        assertThat(recordId.slotIndex()).isEqualTo((short) 1);
         assertThat(heapFile.getTuple(recordId).readShort()).isEqualTo((short) 20);
+    }
+
+    @Test
+    void heapPageRejectsTupleThatDoesNotFit(
+            BufferPoolManager bpm,
+            Storage storage
+    ) throws Exception {
+        ContainerId containerId = ContainerFixture.create(storage).createTable();
+        PageId pageId = new PageId(containerId, 1);
+
+        try (HeapPage heapPage = HeapPage.create(bpm.allocatePage(pageId))) {
+            heapPage.insertTuple(new Tuple(ByteBuffer.allocate(Storage.PAGE_SIZE - PageHeader.SIZE - Slot.SERIALIZED_SIZE)));
+
+            assertThatThrownBy(() -> heapPage.insertTuple(new Tuple(ByteBuffer.allocate(Short.BYTES))))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("page has only");
+        }
     }
 
     @Test

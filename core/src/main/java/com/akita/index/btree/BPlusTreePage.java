@@ -5,7 +5,6 @@ import com.akita.buffer.guards.WritePageGuard;
 import com.akita.buffer.PageId;
 import com.akita.catalog.IndexMetadata;
 import com.akita.page.PageHeader;
-import com.akita.page.Slot;
 import com.akita.page.SlottedPage;
 import com.akita.page.Tuple;
 import java.nio.ByteBuffer;
@@ -68,22 +67,13 @@ public class BPlusTreePage extends SlottedPage implements AutoCloseable {
         };
     }
 
-    public Slot insertTupleSorted(Tuple tuple, Comparator<Tuple> comparator) {
+    public short insertTupleSorted(Tuple tuple, Comparator<Tuple> comparator) {
         if (!(pageGuard instanceof WritePageGuard)) {
             throw new IllegalStateException("pageGuard must be a WritePageGuard");
         }
-        Slot newSlot = super.insertTupleRaw(tuple);
-        slots.sort((s1, s2) -> {
-            Tuple t1 = getTuple(s1);
-            Tuple t2 = getTuple(s2);
-            return comparator.compare(t1, t2);
-        });
-        // Serialize sorted slots
-        for (int i = 0; i < slots.size(); i++) {
-            Slot slot = slots.get(i);
-            data.put(slotDirectoryOffset(i), slot.getBytes());
-        }
-        return newSlot;
+        short slotIndex = appendTuple(tuple);
+        sortSlotsByTuple(comparator);
+        return slotIndex;
     }
 
     public List<Tuple> tuples() {
@@ -104,10 +94,7 @@ public class BPlusTreePage extends SlottedPage implements AutoCloseable {
             throw new IllegalStateException("pageGuard must be a WritePageGuard");
         }
 
-        clearTuples();
-        for (Tuple tuple : tuples) {
-            super.insertTupleRaw(tuple);
-        }
+        replaceTuplesRaw(tuples);
     }
 
     public void replaceInternalTuples(long rightmostChildBlockNumber, List<Tuple> tuples) {
@@ -118,10 +105,7 @@ public class BPlusTreePage extends SlottedPage implements AutoCloseable {
         initializeHeader(data, BTreePageType.INTERNAL, rightmostChildBlockNumber);
         this.pageType = BTreePageType.INTERNAL;
         this.rightmostChildBlockNumber = rightmostChildBlockNumber;
-        clearTuples();
-        for (Tuple tuple : tuples) {
-            super.insertTupleRaw(tuple);
-        }
+        replaceTuplesRaw(tuples);
     }
 
     public long getNextLeafBlockNumber() {
@@ -143,7 +127,7 @@ public class BPlusTreePage extends SlottedPage implements AutoCloseable {
     }
 
     public int lowerBound(Tuple searchTuple, Comparator<Tuple> cmp) {
-        int l = 0, r = slots.size();
+        int l = 0, r = tupleCount();
         while (l < r) {
             int mid = l + (r - l) / 2;
             Tuple midTuple = tupleAt(mid);
@@ -154,7 +138,7 @@ public class BPlusTreePage extends SlottedPage implements AutoCloseable {
     }
 
     public int upperBound(Tuple searchTuple, Comparator<Tuple> cmp) {
-        int l = 0, r = slots.size();
+        int l = 0, r = tupleCount();
         while (l < r) {
             int mid = l + (r - l) / 2;
             Tuple midTuple = tupleAt(mid);
@@ -165,14 +149,10 @@ public class BPlusTreePage extends SlottedPage implements AutoCloseable {
     }
 
     public Tuple tupleAt(int slotIndex) {
-        if (slotIndex < 0 || slotIndex >= slots.size()) {
+        if (slotIndex < 0 || slotIndex >= tupleCount()) {
             return null;
         }
-        return super.getTupleBySlotIndex(slotIndex);
-    }
-
-    public int tupleCount() {
-        return slots.size();
+        return super.tupleAt(slotIndex);
     }
 
     public PageId getPageId() {
@@ -195,7 +175,7 @@ public class BPlusTreePage extends SlottedPage implements AutoCloseable {
     }
 
     public int getRemainingSpace() {
-        return lowestTupleOffset() - (headerSize() + (Slot.SERIALIZED_SIZE * slots.size()));
+        return getFreeSpace();
     }
 
     @Override

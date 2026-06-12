@@ -15,7 +15,7 @@ class TupleSerializer {
     private TupleSerializer() {}
 
     // Leaf tuple layout:
-    // | indexed_cols... | containerId MSB (long) | containerId LSB (long) | blockNumber (long) | slotOffset (short) |
+    // | indexed_cols... | containerId MSB (long) | containerId LSB (long) | blockNumber (long) | slotIndex (short) |
     static Tuple serializeLeaf(LeafBTreeKey key, IndexMetadata meta) {
         int capacity = computeColumnsSize(key, meta) + ridSize();
         Tuple.Builder builder = Tuple.builder(capacity);
@@ -64,7 +64,7 @@ class TupleSerializer {
         builder.writeLong(uuid.getMostSignificantBits());
         builder.writeLong(uuid.getLeastSignificantBits());
         builder.writeLong(rid.pageId().blockNumber());
-        builder.writeShort(rid.slotOffset());
+        builder.writeShort(rid.slotIndex());
     }
 
     private static int computeColumnsSize(BTreeKeyComparable key, IndexMetadata meta) {
@@ -91,7 +91,7 @@ class TupleSerializer {
     }
 
     private static int ridSize() {
-        // containerId MSB + LSB + blockNumber + slotNumber
+        // containerId MSB + LSB + blockNumber + slotIndex
         return Long.BYTES + Long.BYTES + Long.BYTES + Short.BYTES;
     }
 

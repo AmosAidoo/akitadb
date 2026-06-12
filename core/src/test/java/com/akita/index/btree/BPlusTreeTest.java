@@ -68,6 +68,19 @@ class BPlusTreeTest {
     }
 
     @Test
+    void leafTupleSerializationPreservesRecordSlotIndex(Storage storage) throws Exception {
+        ContainerId containerId = createIndexContainer(storage);
+        IndexMetadata metadata = intIndexMetadata(containerId);
+        RecordId rid = new RecordId(new PageId(containerId, 42), (short) 7);
+        LeafBTreeKey key = leafKey(10, rid);
+
+        LeafBTreeKey roundTripped = LeafBTreeKey.ofLeaf(TupleSerializer.serializeLeaf(key, metadata), metadata);
+
+        assertThat(roundTripped.rid()).isEqualTo(rid);
+        assertThat(roundTripped.rid().slotIndex()).isEqualTo((short) 7);
+    }
+
+    @Test
     void findsKeyThroughInternalRoot(
             BufferPoolManager bpm,
             Storage storage

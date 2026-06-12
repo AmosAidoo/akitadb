@@ -137,6 +137,10 @@ Most logical pages share the same base layout:
 Slots grow forward from the header. Tuple bytes grow backward from the end of
 the page. A slot points to the tuple's byte range.
 
+Heap records are addressed by `RecordId = (PageId, slotIndex)`, where
+`slotIndex` is the logical slot-directory position rather than the tuple byte
+offset.
+
 ### Page Directory
 
 Block `0` is special for heap-like objects. It starts with a small object header,

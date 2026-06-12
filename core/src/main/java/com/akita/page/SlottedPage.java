@@ -4,6 +4,8 @@ import com.akita.storage.Storage;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -12,10 +14,6 @@ import java.util.List;
  */
 public abstract class SlottedPage {
     protected PageHeader pageHeader;
-
-    public List<Slot> getSlots() {
-        return slots;
-    }
 
     protected List<Slot> slots;
     protected ByteBuffer data;
@@ -36,7 +34,7 @@ public abstract class SlottedPage {
         for (short i = 0; i < this.pageHeader.getNumberOfSlots(); i++) {
             short offset = data.getShort();
             short length = data.getShort();
-            slots.add(Slot.create(i, offset, length));
+            slots.add(Slot.create(offset, length));
         }
         this.slots = slots;
     }
@@ -62,20 +60,21 @@ public abstract class SlottedPage {
         // no-op by default; subclasses override to read their extra fields
     }
 
-    protected Tuple getTuple(short slotOffset) {
-        Slot slot = slots.stream().filter(s -> s.getOffset() == slotOffset).findFirst().orElse(null);
-        if (slot == null) {
-            throw new IllegalArgumentException(slotOffset + " is not a valid slot");
-        }
-        byte[] tupleBytes = new byte[slot.getLength()];
-        data.get(slot.getOffset(), tupleBytes);
-        return new Tuple(tupleBytes);
+    public List<Slot> slots() {
+        return Collections.unmodifiableList(slots);
     }
 
-    protected Tuple getTuple(Slot slot) {
-        byte[] tupleBytes = new byte[slot.getLength()];
-        data.get(slot.getOffset(), tupleBytes);
-        return new Tuple(tupleBytes);
+    public int tupleCount() {
+        return slots.size();
+    }
+
+    public Slot slotAt(int slotIndex) {
+        validateSlotIndex(slotIndex);
+        return slots.get(slotIndex);
+    }
+
+    public Tuple tupleAt(int slotIndex) {
+        return tupleFor(slotAt(slotIndex));
     }
 
     protected int lowestTupleOffset() {
@@ -85,28 +84,51 @@ public abstract class SlottedPage {
                 .orElse(Storage.PAGE_SIZE);
     }
 
-    protected Slot insertTupleRaw(Tuple tuple) {
-        int lastOffsetBase = lowestTupleOffset();
-        Slot newSlot = Slot.create((short) slots.size(), (short) (lastOffsetBase - tuple.size()), (short) tuple.size());
-        slots.add(newSlot);
-        pageHeader.setNumberOfSlots((short) slots.size());
-        data.putShort(numberOfSlotsOffset(), pageHeader.getNumberOfSlots());
-        data.put(slotDirectoryOffset(slots.size() - 1), newSlot.getBytes());
+    protected short appendTuple(Tuple tuple) {
+        validateAppend(tuple);
+        short slotIndex = appendSlotMetadata(tuple, true);
+        Slot newSlot = slots.get(slotIndex);
+        writeSlot(slotIndex);
         data.put(newSlot.getOffset(), tuple.getBuffer().array());
-        return newSlot;
+        return slotIndex;
     }
 
-    protected void clearTuples() {
+    protected short cacheAppendedTuple(Tuple tuple) {
+        validateAppend(tuple);
+        return appendSlotMetadata(tuple, false);
+    }
+
+    private short appendSlotMetadata(Tuple tuple, boolean writeHeader) {
+        int lastOffsetBase = lowestTupleOffset();
+        short slotIndex = (short) slots.size();
+        Slot newSlot = Slot.create((short) (lastOffsetBase - tuple.size()), (short) tuple.size());
+        slots.add(newSlot);
+        pageHeader.setNumberOfSlots((short) slots.size());
+        if (writeHeader) {
+            data.putShort(numberOfSlotsOffset(), pageHeader.getNumberOfSlots());
+        }
+        return slotIndex;
+    }
+
+    protected void replaceTuplesRaw(List<Tuple> tuples) {
+        clearTuples();
+        for (Tuple tuple : tuples) {
+            appendTuple(tuple);
+        }
+    }
+
+    protected void sortSlotsByTuple(Comparator<Tuple> comparator) {
+        slots.sort((s1, s2) -> comparator.compare(tupleFor(s1), tupleFor(s2)));
+        writeSlots();
+    }
+
+    private void clearTuples() {
         slots.clear();
         pageHeader.setNumberOfSlots((short) 0);
         data.putShort(numberOfSlotsOffset(), pageHeader.getNumberOfSlots());
     }
 
-    protected Tuple getTupleBySlotIndex(int slotIndex) {
-        Slot slot = slots.get(slotIndex);
-        if (slot == null) {
-            throw new IllegalArgumentException(slotIndex + " is not a valid slot index");
-        }
+    private Tuple tupleFor(Slot slot) {
         byte[] tupleBytes = new byte[slot.getLength()];
         data.get(slot.getOffset(), tupleBytes);
         return new Tuple(tupleBytes);
@@ -120,10 +142,37 @@ public abstract class SlottedPage {
     /**
      * Replaces the tuple at the given slot with a new one of equal size.
      */
-    public void updateTuple(Slot slot, Tuple tuple) {
+    public void updateTuple(int slotIndex, Tuple tuple) {
+        Slot slot = slotAt(slotIndex);
         if (tuple.size() != slot.getLength()) {
             throw new IllegalArgumentException("In-place update requires equal-size tuple");
         }
         data.put(slot.getOffset(), tuple.getBuffer().array());
+    }
+
+    private void validateSlotIndex(int slotIndex) {
+        if (slotIndex < 0 || slotIndex >= slots.size()) {
+            throw new IllegalArgumentException(slotIndex + " is not a valid slot index");
+        }
+    }
+
+    private void validateAppend(Tuple tuple) {
+        if (slots.size() >= Short.MAX_VALUE) {
+            throw new IllegalStateException("Slotted page cannot contain more than " + Short.MAX_VALUE + " tuples");
+        }
+        if (tuple.serializedSize() > getFreeSpace()) {
+            throw new IllegalArgumentException("Tuple requires " + tuple.serializedSize()
+                    + " bytes but page has only " + getFreeSpace() + " bytes free");
+        }
+    }
+
+    private void writeSlots() {
+        for (int i = 0; i < slots.size(); i++) {
+            writeSlot(i);
+        }
+    }
+
+    private void writeSlot(int slotIndex) {
+        data.put(slotDirectoryOffset(slotIndex), slots.get(slotIndex).getBytes());
     }
 }
