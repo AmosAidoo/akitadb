@@ -18,6 +18,12 @@ public class BufferPoolMetrics {
     private final AtomicLong flushPageRequests = new AtomicLong();
     private final AtomicLong flushPageMisses = new AtomicLong();
     private final AtomicLong dirtyPageFlushes = new AtomicLong();
+    private final AtomicLong acquireFrameTotalNanos = new AtomicLong();
+    private final AtomicLong acquireFrameMaxNanos = new AtomicLong();
+    private final AtomicLong prepareFrameForReuseTotalNanos = new AtomicLong();
+    private final AtomicLong prepareFrameForReuseMaxNanos = new AtomicLong();
+    private final AtomicLong flushSnapshotTotalNanos = new AtomicLong();
+    private final AtomicLong flushSnapshotMaxNanos = new AtomicLong();
 
     public void recordReadPageRequest() {
         readPageRequests.incrementAndGet();
@@ -67,6 +73,18 @@ public class BufferPoolMetrics {
         dirtyPageFlushes.incrementAndGet();
     }
 
+    public void recordAcquireFrameDuration(long nanos) {
+        recordDuration(acquireFrameTotalNanos, acquireFrameMaxNanos, nanos);
+    }
+
+    public void recordPrepareFrameForReuseDuration(long nanos) {
+        recordDuration(prepareFrameForReuseTotalNanos, prepareFrameForReuseMaxNanos, nanos);
+    }
+
+    public void recordFlushSnapshotDuration(long nanos) {
+        recordDuration(flushSnapshotTotalNanos, flushSnapshotMaxNanos, nanos);
+    }
+
     public Snapshot snapshot() {
         return new Snapshot(
                 readPageRequests.get(),
@@ -80,8 +98,19 @@ public class BufferPoolMetrics {
                 frameWaits.get(),
                 flushPageRequests.get(),
                 flushPageMisses.get(),
-                dirtyPageFlushes.get()
+                dirtyPageFlushes.get(),
+                acquireFrameTotalNanos.get(),
+                acquireFrameMaxNanos.get(),
+                prepareFrameForReuseTotalNanos.get(),
+                prepareFrameForReuseMaxNanos.get(),
+                flushSnapshotTotalNanos.get(),
+                flushSnapshotMaxNanos.get()
         );
+    }
+
+    private static void recordDuration(AtomicLong total, AtomicLong max, long nanos) {
+        total.addAndGet(nanos);
+        max.updateAndGet(current -> Math.max(current, nanos));
     }
 
     public record Snapshot(
@@ -96,22 +125,34 @@ public class BufferPoolMetrics {
             long frameWaits,
             long flushPageRequests,
             long flushPageMisses,
-            long dirtyPageFlushes
+            long dirtyPageFlushes,
+            long acquireFrameTotalNanos,
+            long acquireFrameMaxNanos,
+            long prepareFrameForReuseTotalNanos,
+            long prepareFrameForReuseMaxNanos,
+            long flushSnapshotTotalNanos,
+            long flushSnapshotMaxNanos
     ) {
         public String toLine() {
-            return "[akita.metrics] " +
-                    "buffer.read_page.requests=" + readPageRequests +
-                    " buffer.read_page.hits=" + readPageHits +
-                    " buffer.read_page.misses=" + readPageMisses +
-                    " buffer.write_page.requests=" + writePageRequests +
-                    " buffer.write_page.hits=" + writePageHits +
-                    " buffer.write_page.misses=" + writePageMisses +
-                    " buffer.allocate_page.requests=" + allocatePageRequests +
-                    " buffer.frame.evictions=" + frameEvictions +
-                    " buffer.frame.waits=" + frameWaits +
-                    " buffer.flush_page.requests=" + flushPageRequests +
-                    " buffer.flush_page.misses=" + flushPageMisses +
-                    " buffer.flush_page.dirty_pages=" + dirtyPageFlushes;
+            return "[akita.metrics] buffer\n" +
+                    "  buffer.read_page.requests=" + readPageRequests + "\n" +
+                    "  buffer.read_page.hits=" + readPageHits + "\n" +
+                    "  buffer.read_page.misses=" + readPageMisses + "\n" +
+                    "  buffer.write_page.requests=" + writePageRequests + "\n" +
+                    "  buffer.write_page.hits=" + writePageHits + "\n" +
+                    "  buffer.write_page.misses=" + writePageMisses + "\n" +
+                    "  buffer.allocate_page.requests=" + allocatePageRequests + "\n" +
+                    "  buffer.frame.evictions=" + frameEvictions + "\n" +
+                    "  buffer.frame.waits=" + frameWaits + "\n" +
+                    "  buffer.flush_page.requests=" + flushPageRequests + "\n" +
+                    "  buffer.flush_page.misses=" + flushPageMisses + "\n" +
+                    "  buffer.flush_page.dirty_pages=" + dirtyPageFlushes + "\n" +
+                    "  buffer.acquire_frame.total_nanos=" + acquireFrameTotalNanos + "\n" +
+                    "  buffer.acquire_frame.max_nanos=" + acquireFrameMaxNanos + "\n" +
+                    "  buffer.prepare_frame_for_reuse.total_nanos=" + prepareFrameForReuseTotalNanos + "\n" +
+                    "  buffer.prepare_frame_for_reuse.max_nanos=" + prepareFrameForReuseMaxNanos + "\n" +
+                    "  buffer.flush_snapshot.total_nanos=" + flushSnapshotTotalNanos + "\n" +
+                    "  buffer.flush_snapshot.max_nanos=" + flushSnapshotMaxNanos;
         }
     }
 }

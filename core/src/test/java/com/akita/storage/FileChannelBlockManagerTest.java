@@ -28,6 +28,8 @@ class FileChannelBlockManagerTest {
         BlockManagerMetrics.Snapshot metrics = bm.metrics().snapshot();
         assertThat(metrics.allocateBlockRequests()).isEqualTo(2);
         assertThat(metrics.blocksZeroFilled()).isEqualTo(10);
+        assertThat(metrics.allocateBlockTotalNanos()).isGreaterThan(0);
+        assertThat(metrics.allocateBlockMaxNanos()).isGreaterThan(0);
     }
 
     @Test
@@ -52,6 +54,10 @@ class FileChannelBlockManagerTest {
         assertThat(metrics.readBlockRequests()).isEqualTo(1);
         assertThat(metrics.allocateBlockRequests()).isEqualTo(1);
         assertThat(metrics.blocksZeroFilled()).isEqualTo(1);
+        assertThat(metrics.writeBlockTotalNanos()).isGreaterThan(0);
+        assertThat(metrics.writeBlockMaxNanos()).isGreaterThan(0);
+        assertThat(metrics.readBlockTotalNanos()).isGreaterThan(0);
+        assertThat(metrics.readBlockMaxNanos()).isGreaterThan(0);
     }
 
 //    @Test

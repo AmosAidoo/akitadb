@@ -20,6 +20,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -130,6 +131,68 @@ public class StorageMetricsWorkload {
         System.out.println(buffer.toLine());
         System.out.println(disk.toLine());
         System.out.println(block.toLine());
+        System.out.println(summary(buffer, disk, block));
+    }
+
+    private static String summary(
+            BufferPoolMetrics.Snapshot buffer,
+            DiskSchedulerMetrics.Snapshot disk,
+            BlockManagerMetrics.Snapshot block
+    ) {
+        return "[akita.summary]\n" +
+                "  buffer.read_hit_ratio=" + ratio(buffer.readPageHits(), buffer.readPageRequests()) + "\n" +
+                "  buffer.reads=" + buffer.readPageRequests() +
+                " hits=" + buffer.readPageHits() +
+                " misses=" + buffer.readPageMisses() + "\n" +
+                "  buffer.evictions=" + buffer.frameEvictions() +
+                " dirty_flushes=" + buffer.dirtyPageFlushes() + "\n" +
+                "  disk.submitted=" + disk.submittedRequests() +
+                " completed=" + disk.completedRequests() +
+                " max_queue_depth=" + disk.maxQueueDepth() +
+                " max_in_flight=" + disk.maxInFlightRequests() + "\n" +
+                "  block.reads=" + block.readBlockRequests() +
+                " writes=" + block.writeBlockRequests() +
+                " allocations=" + block.allocateBlockRequests() +
+                " zero_filled=" + block.blocksZeroFilled() + "\n" +
+                "  interpretation: " + interpretation(buffer, disk, block);
+    }
+
+    private static String interpretation(
+            BufferPoolMetrics.Snapshot buffer,
+            DiskSchedulerMetrics.Snapshot disk,
+            BlockManagerMetrics.Snapshot block
+    ) {
+        if (block.allocateBlockRequests() > 0
+                && buffer.readPageRequests() == 0
+                && disk.submittedRequests() == 0) {
+            return "storage allocation happened directly at the block layer; BPM and scheduler stayed idle.";
+        }
+        if (buffer.readPageRequests() > 0
+                && buffer.readPageMisses() == 0
+                && disk.readRequests() == 0) {
+            return "reads were served from resident buffer frames; no disk reads were needed.";
+        }
+        if (buffer.readPageMisses() > 0
+                && disk.readRequests() == buffer.readPageMisses()
+                && block.readBlockRequests() == buffer.readPageMisses()) {
+            return "buffer misses propagated through the scheduler to physical block reads.";
+        }
+        if (buffer.frameEvictions() > 0
+                && buffer.dirtyPageFlushes() > 0
+                && disk.writeRequests() > 0) {
+            return "frame pressure forced eviction, and dirty data was written before reuse.";
+        }
+        if (disk.maxQueueDepth() > 1) {
+            return "scheduler queue depth grew; requests arrived faster than the single worker completed them.";
+        }
+        return "metrics completed; compare the nonzero counters with the scenario expectation.";
+    }
+
+    private static String ratio(long numerator, long denominator) {
+        if (denominator == 0) {
+            return "n/a";
+        }
+        return String.format(Locale.ROOT, "%.3f", (double) numerator / denominator);
     }
 
     private static class WorkloadContext implements AutoCloseable {

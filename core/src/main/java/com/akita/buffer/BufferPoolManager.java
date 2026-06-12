@@ -99,43 +99,55 @@ public class BufferPoolManager {
     }
 
     private void flushSnapshot(Frame frame, PageSnapshot snapshot) throws ExecutionException, InterruptedException {
+        long startedAtNanos = System.nanoTime();
         if (snapshot == null) {
+            metrics.recordFlushSnapshotDuration(System.nanoTime() - startedAtNanos);
             return;
         }
 
-        metrics.recordDirtyPageFlush();
-        Future<?> writeFuture = diskScheduler.schedulePageWrite(snapshot.pageId(), snapshot.data());
-        frame.getWriteLatch().lock();
         try {
-            frame.setPendingWrite(writeFuture);
+            metrics.recordDirtyPageFlush();
+            Future<?> writeFuture = diskScheduler.schedulePageWrite(snapshot.pageId(), snapshot.data());
+            frame.getWriteLatch().lock();
+            try {
+                frame.setPendingWrite(writeFuture);
+            } finally {
+                frame.getWriteLatch().unlock();
+            }
+            writeFuture.get();
+            markSnapshotFlushed(frame, snapshot.dirtyVersion());
         } finally {
-            frame.getWriteLatch().unlock();
+            metrics.recordFlushSnapshotDuration(System.nanoTime() - startedAtNanos);
         }
-        writeFuture.get();
-        markSnapshotFlushed(frame, snapshot.dirtyVersion());
     }
 
     private void prepareFrameForReuse(Frame frame) throws ExecutionException, InterruptedException {
+        long startedAtNanos = System.nanoTime();
         PageId oldPageId = frame.getPageId();
         if (oldPageId == null) {
+            metrics.recordPrepareFrameForReuseDuration(System.nanoTime() - startedAtNanos);
             return;
         }
 
-        PageSnapshot snapshot = snapshotDirtyPage(frame);
-        flushSnapshot(frame, snapshot);
-
-        frame.getWriteLatch().lock();
         try {
-            Future<?> pendingWrite = frame.getPendingWrite();
-            if (pendingWrite != null) {
-                pendingWrite.get();
-                frame.setPendingWrite(null);
-            }
+            PageSnapshot snapshot = snapshotDirtyPage(frame);
+            flushSnapshot(frame, snapshot);
 
-            pageTable.remove(oldPageId);
-            frame.setPageId(null);
+            frame.getWriteLatch().lock();
+            try {
+                Future<?> pendingWrite = frame.getPendingWrite();
+                if (pendingWrite != null) {
+                    pendingWrite.get();
+                    frame.setPendingWrite(null);
+                }
+
+                pageTable.remove(oldPageId);
+                frame.setPageId(null);
+            } finally {
+                frame.getWriteLatch().unlock();
+            }
         } finally {
-            frame.getWriteLatch().unlock();
+            metrics.recordPrepareFrameForReuseDuration(System.nanoTime() - startedAtNanos);
         }
     }
 
@@ -144,26 +156,31 @@ public class BufferPoolManager {
     // the standard pattern because await() can wake spuriously (OS-level behaviour),
     // so you always re-check the condition after waking up.
     private FrameReservation acquireFrameId() throws InterruptedException {
-        while (true) {
-            if (!freeFrames.isEmpty()) {
-                return new FrameReservation(freeFrames.remove().getFrameId(), false);
-            }
-
-            FrameId frameId = replacer.evict();
-            if (frameId != null) {
-                metrics.recordFrameEviction();
-                frames.get(frameId).pin();
-                PageId oldPageId = frames.get(frameId).getPageId();
-                if (oldPageId != null) {
-                    pageTable.remove(oldPageId);
+        long startedAtNanos = System.nanoTime();
+        try {
+            while (true) {
+                if (!freeFrames.isEmpty()) {
+                    return new FrameReservation(freeFrames.remove().getFrameId(), false);
                 }
-                return new FrameReservation(frameId, true);
-            }
 
-            // All frames are pinned. Release the latch and sleep until
-            // a frame becomes available (signalled from unpin/delete).
-            metrics.recordFrameWait();
-            frameAvailable.await();
+                FrameId frameId = replacer.evict();
+                if (frameId != null) {
+                    metrics.recordFrameEviction();
+                    frames.get(frameId).pin();
+                    PageId oldPageId = frames.get(frameId).getPageId();
+                    if (oldPageId != null) {
+                        pageTable.remove(oldPageId);
+                    }
+                    return new FrameReservation(frameId, true);
+                }
+
+                // All frames are pinned. Release the latch and sleep until
+                // a frame becomes available (signalled from unpin/delete).
+                metrics.recordFrameWait();
+                frameAvailable.await();
+            }
+        } finally {
+            metrics.recordAcquireFrameDuration(System.nanoTime() - startedAtNanos);
         }
     }
 

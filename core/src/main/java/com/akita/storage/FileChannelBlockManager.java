@@ -30,45 +30,60 @@ public class FileChannelBlockManager implements BlockManager {
 
     @Override
     public void allocateBlock(ContainerId containerId, long blockNumber) throws IOException {
+        long startedAtNanos = System.nanoTime();
         metrics.recordAllocateBlockRequest();
-        VFSFile file = vfs.open(containerId, OpenMode.WRITE, OpenMode.CREATE);
-        long numberOfBlocks = file.size() / BLOCK_SIZE;
+        try {
+            VFSFile file = vfs.open(containerId, OpenMode.WRITE, OpenMode.CREATE);
+            long numberOfBlocks = file.size() / BLOCK_SIZE;
 
-        ByteBuffer buffer = ByteBuffer.allocate(BLOCK_SIZE);
-        while (numberOfBlocks <= blockNumber) {
-            metrics.recordBlockZeroFilled();
-            file.write(buffer, numberOfBlocks * BLOCK_SIZE);
-            numberOfBlocks++;
-            buffer.clear();
+            ByteBuffer buffer = ByteBuffer.allocate(BLOCK_SIZE);
+            while (numberOfBlocks <= blockNumber) {
+                metrics.recordBlockZeroFilled();
+                file.write(buffer, numberOfBlocks * BLOCK_SIZE);
+                numberOfBlocks++;
+                buffer.clear();
+            }
+            file.close();
+        } finally {
+            metrics.recordAllocateBlockDuration(System.nanoTime() - startedAtNanos);
         }
-        file.close();
     }
 
     @Override
     public void writeBlock(ContainerId containerId, long blockNumber, ByteBuffer buffer) throws IOException, IllegalArgumentException {
+        long startedAtNanos = System.nanoTime();
         metrics.recordWriteBlockRequest();
-        ByteBuffer toWrite = buffer.duplicate();
-        toWrite.clear();
-        if (toWrite.capacity() != BLOCK_SIZE) {
-            throw new IllegalArgumentException("Buffer must be exactly BLOCK_SIZE bytes");
+        try {
+            ByteBuffer toWrite = buffer.duplicate();
+            toWrite.clear();
+            if (toWrite.capacity() != BLOCK_SIZE) {
+                throw new IllegalArgumentException("Buffer must be exactly BLOCK_SIZE bytes");
+            }
+            VFSFile file = vfs.open(containerId, OpenMode.WRITE, OpenMode.CREATE);
+            if (!blockExists(file, blockNumber)) {
+                allocateBlock(containerId, blockNumber);
+            }
+            file.write(toWrite, blockNumber * BLOCK_SIZE);
+            file.close();
+        } finally {
+            metrics.recordWriteBlockDuration(System.nanoTime() - startedAtNanos);
         }
-        VFSFile file = vfs.open(containerId, OpenMode.WRITE, OpenMode.CREATE);
-        if (!blockExists(file, blockNumber)) {
-            allocateBlock(containerId, blockNumber);
-        }
-        file.write(toWrite, blockNumber * BLOCK_SIZE);
-        file.close();
     }
 
     @Override
     public void readBlock(ContainerId containerId, long blockNumber, ByteBuffer buffer) throws IOException {
+        long startedAtNanos = System.nanoTime();
         metrics.recordReadBlockRequest();
-        if (buffer.capacity() != BLOCK_SIZE) {
-            throw new IllegalArgumentException("Buffer must be exactly BLOCK_SIZE bytes");
+        try {
+            if (buffer.capacity() != BLOCK_SIZE) {
+                throw new IllegalArgumentException("Buffer must be exactly BLOCK_SIZE bytes");
+            }
+            VFSFile file = vfs.open(containerId, OpenMode.READ);
+            file.read(buffer, blockNumber * BLOCK_SIZE);
+            file.close();
+        } finally {
+            metrics.recordReadBlockDuration(System.nanoTime() - startedAtNanos);
         }
-        VFSFile file = vfs.open(containerId, OpenMode.READ);
-        file.read(buffer, blockNumber * BLOCK_SIZE);
-        file.close();
     }
 
     private boolean blockExists(VFSFile file, long blockNumber) throws IOException {

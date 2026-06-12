@@ -139,6 +139,9 @@ class BufferPoolManagerTest {
         assertThat(diskMetrics.allocateRequests()).isEqualTo(2);
         assertThat(diskMetrics.writeRequests()).isEqualTo(1);
         assertThat(diskMetrics.readRequests()).isZero();
+        assertThat(metrics.acquireFrameTotalNanos()).isGreaterThan(0);
+        assertThat(metrics.prepareFrameForReuseTotalNanos()).isGreaterThan(0);
+        assertThat(metrics.flushSnapshotTotalNanos()).isGreaterThan(0);
 
         ByteBuffer persisted = ByteBuffer.allocate(BlockManager.BLOCK_SIZE);
         bm.readBlock(containerId, 0, persisted);
