@@ -1,6 +1,5 @@
 package com.akita.query.execution;
 
-import com.akita.heap.HeapFile;
 import com.akita.heap.HeapFileScan;
 import com.akita.page.Tuple;
 import com.akita.query.physical.SeqScanPlan;
@@ -19,8 +18,7 @@ public class SeqScanExecutor implements Executor {
     SeqScanExecutor(ExecutionContext context, SeqScanPlan plan, RowTupleCodec codec) throws Exception {
         this.plan = plan;
         this.codec = codec;
-        HeapFile heapFile = HeapFile.open(plan.table().metadata().containerId(), context.bufferPoolManager());
-        this.scan = heapFile.scanTuples();
+        this.scan = context.tableAccess().scan(plan.table().metadata());
     }
 
     @Override

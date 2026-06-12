@@ -17,6 +17,11 @@ public class HeapFile {
     private final ContainerId containerId;
     private final BufferPoolManager bufferPoolManager;
 
+    @FunctionalInterface
+    private interface DirectoryMutation<T> {
+        T apply(PageDirectory directory) throws Exception;
+    }
+
     private HeapFile(ContainerId containerId, PageDirectory pageDirectory, BufferPoolManager bufferPoolManager) {
         this.containerId = containerId;
         this.pageDirectory = pageDirectory;
@@ -90,16 +95,10 @@ public class HeapFile {
     private void addPageDirectoryEntry(PageId dataPageId, int freeSpace) throws Exception {
         Tuple entry = PageDirectory.createTuple(dataPageId.blockNumber(), freeSpace);
         PageDirectory target = writableDirectoryFor(entry.serializedSize(), dataPageId.blockNumber() + 1);
-        try (WritePageGuard dirGuard = bufferPoolManager.writePage(target.pageId())) {
-            ByteBuffer dirData = dirGuard.getData();
-            PageDirectory dir = PageDirectory.create(dataPageId.containerId());
-            if (target.pageId().blockNumber() == PageDirectory.FIRST_PAGE_DIRECTORY_NUMBER) {
-                dir.parseFirstPage(dirData);
-            } else {
-                dir.parsePage(dirData);
-            }
+        mutateDirectory(target, dir -> {
             dir.insertEntry(entry);
-        }
+            return null;
+        });
         target.cacheInsertedEntry(entry);
     }
 
@@ -158,15 +157,7 @@ public class HeapFile {
     }
 
     private boolean updatePageDirectoryEntry(PageDirectory directory, PageId targetPage, int newFreeSpace) throws Exception {
-        try (WritePageGuard dirGuard = bufferPoolManager.writePage(directory.pageId())) {
-            ByteBuffer dirData = dirGuard.getData();
-            PageDirectory dir = PageDirectory.create(targetPage.containerId());
-            if (directory.pageId().blockNumber() == PageDirectory.FIRST_PAGE_DIRECTORY_NUMBER) {
-                dir.parseFirstPage(dirData);
-            } else {
-                dir.parsePage(dirData);
-            }
-
+        return mutateDirectory(directory, dir -> {
             for (int i = 0; i < dir.tupleCount(); i++) {
                 Tuple entry = dir.tupleAt(i);
                 long blockNumber = entry.readLong();
@@ -176,7 +167,19 @@ public class HeapFile {
                     return true;
                 }
             }
+            return false;
+        });
+    }
+
+    private <T> T mutateDirectory(PageDirectory directory, DirectoryMutation<T> mutation) throws Exception {
+        try (WritePageGuard dirGuard = bufferPoolManager.writePage(directory.pageId())) {
+            PageDirectory writable = PageDirectory.create(directory.pageId().containerId());
+            if (directory.pageId().blockNumber() == PageDirectory.FIRST_PAGE_DIRECTORY_NUMBER) {
+                writable.parseFirstPage(dirGuard.getData());
+            } else {
+                writable.parsePage(dirGuard.getData());
+            }
+            return mutation.apply(writable);
         }
-        return false;
     }
 }

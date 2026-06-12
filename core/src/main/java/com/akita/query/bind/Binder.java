@@ -3,6 +3,7 @@ package com.akita.query.bind;
 import com.akita.catalog.Catalog;
 import com.akita.catalog.TableMetadata;
 import com.akita.datatype.AkitaType;
+import com.akita.datatype.AkitaTypes;
 import com.akita.datatype.ColumnMetadata;
 import com.akita.sql.ast.BinaryExpression;
 import com.akita.sql.ast.BinaryOperator;
@@ -159,18 +160,11 @@ public class Binder {
             }
             return;
         }
-        if (!compatible(column.type(), value.type())) {
+        if (!AkitaTypes.compatible(column.type(), value.type())) {
             throw new BindException("Value for column " + column.name() + " has type "
                     + value.type().getClass().getSimpleName() + " but expected "
                     + column.type().getClass().getSimpleName());
         }
-    }
-
-    private static boolean compatible(AkitaType target, AkitaType source) {
-        if (target instanceof AkitaType.Varchar targetVarchar && source instanceof AkitaType.Varchar sourceVarchar) {
-            return sourceVarchar.maxLength() <= targetVarchar.maxLength();
-        }
-        return target.getClass().equals(source.getClass());
     }
 
     private static AkitaType literalType(Object value) {

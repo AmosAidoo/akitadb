@@ -1,28 +1,28 @@
 package com.akita.query.execution;
 
 import com.akita.datatype.AkitaValue;
-import com.akita.heap.HeapFile;
 import com.akita.query.physical.InsertPlan;
+import com.akita.query.storage.TableAccess;
 
 import java.util.Optional;
 
 public class InsertExecutor implements Executor {
     private final InsertPlan plan;
-    private final HeapFile heapFile;
+    private final TableAccess tableAccess;
     private final RowTupleCodec codec;
     private final ExpressionEvaluator evaluator;
     private boolean executed;
 
     public InsertExecutor(ExecutionContext context, InsertPlan plan) throws Exception {
         this(plan,
-                HeapFile.open(plan.statement().table().metadata().containerId(), context.bufferPoolManager()),
+                context.tableAccess(),
                 new RowTupleCodec(),
                 new ExpressionEvaluator());
     }
 
-    InsertExecutor(InsertPlan plan, HeapFile heapFile, RowTupleCodec codec, ExpressionEvaluator evaluator) {
+    InsertExecutor(InsertPlan plan, TableAccess tableAccess, RowTupleCodec codec, ExpressionEvaluator evaluator) {
         this.plan = plan;
-        this.heapFile = heapFile;
+        this.tableAccess = tableAccess;
         this.codec = codec;
         this.evaluator = evaluator;
     }
@@ -40,7 +40,10 @@ public class InsertExecutor implements Executor {
                 int ordinal = plan.statement().targetColumns().get(i).ordinalPosition();
                 rowValues[ordinal] = evaluator.evaluate(values.get(i), Row.of());
             }
-            heapFile.insertTuple(codec.encode(new Row(rowValues), plan.statement().table().metadata().schema()));
+            tableAccess.insert(
+                    plan.statement().table().metadata(),
+                    codec.encode(new Row(rowValues), plan.statement().table().metadata().schema())
+            );
         }
 
         return Optional.empty();
