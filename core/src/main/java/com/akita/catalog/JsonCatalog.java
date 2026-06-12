@@ -1,6 +1,6 @@
 package com.akita.catalog;
 
-import com.akita.datatype.AkitaType;
+import com.akita.datatype.AkitaTypes;
 import com.akita.datatype.ColumnMetadata;
 import com.akita.datatype.Schema;
 import com.akita.storage.ContainerId;
@@ -95,7 +95,7 @@ public class JsonCatalog implements Catalog {
     private static ColumnMetadata decodeColumn(Map<String, Object> object) {
         return new ColumnMetadata(
                 requireString(object.get("name"), "name"),
-                parseType(requireString(object.get("type"), "type")),
+                AkitaTypes.parse(requireString(object.get("type"), "type")),
                 requireInt(object.get("ordinalPosition"), "ordinalPosition"),
                 requireBoolean(object.get("nullable"), "nullable")
         );
@@ -194,47 +194,12 @@ public class JsonCatalog implements Catalog {
         for (ColumnMetadata column : table.schema().columns()) {
             Map<String, Object> columnObject = new LinkedHashMap<>();
             columnObject.put("name", column.name());
-            columnObject.put("type", formatType(column.type()));
+            columnObject.put("type", AkitaTypes.format(column.type()));
             columnObject.put("ordinalPosition", (long) column.ordinalPosition());
             columnObject.put("nullable", column.nullable());
             columnObjects.add(columnObject);
         }
         return columnObjects;
-    }
-
-    private static String formatType(AkitaType type) {
-        return switch (type) {
-            case AkitaType.Integer ignored -> "INTEGER";
-            case AkitaType.BigInt ignored -> "BIGINT";
-            case AkitaType.Double ignored -> "DOUBLE";
-            case AkitaType.Boolean ignored -> "BOOLEAN";
-            case AkitaType.Varchar varchar -> "VARCHAR(" + varchar.maxLength() + ")";
-        };
-    }
-
-    private static AkitaType parseType(String source) {
-        switch (source) {
-            case "INTEGER" -> {
-                return new AkitaType.Integer();
-            }
-            case "BIGINT" -> {
-                return new AkitaType.BigInt();
-            }
-            case "DOUBLE" -> {
-                return new AkitaType.Double();
-            }
-            case "BOOLEAN" -> {
-                return new AkitaType.Boolean();
-            }
-        }
-        if (source.startsWith("VARCHAR(") && source.endsWith(")")) {
-            String maxLength = source.substring("VARCHAR(".length(), source.length() - 1);
-            if (maxLength.isEmpty() || !maxLength.chars().allMatch(Character::isDigit)) {
-                throw new IllegalArgumentException("unknown catalog type: " + source);
-            }
-            return new AkitaType.Varchar(Integer.parseInt(maxLength));
-        }
-        throw new IllegalArgumentException("unknown catalog type: " + source);
     }
 
 }

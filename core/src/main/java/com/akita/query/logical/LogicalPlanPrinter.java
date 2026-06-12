@@ -1,7 +1,7 @@
 package com.akita.query.logical;
 
 import com.akita.datatype.ColumnMetadata;
-import com.akita.datatype.AkitaType;
+import com.akita.datatype.AkitaTypes;
 import com.akita.query.bind.BoundBinaryExpression;
 import com.akita.query.bind.BoundColumnReference;
 import com.akita.query.bind.BoundExpression;
@@ -86,17 +86,7 @@ public final class LogicalPlanPrinter {
     }
 
     private static String formatColumn(ColumnMetadata column) {
-        return column.name() + ":" + formatType(column.type());
-    }
-
-    private static String formatType(AkitaType type) {
-        return switch (type) {
-            case AkitaType.Integer ignored -> "INTEGER";
-            case AkitaType.BigInt ignored -> "BIGINT";
-            case AkitaType.Double ignored -> "DOUBLE";
-            case AkitaType.Varchar varchar -> "VARCHAR(" + varchar.maxLength() + ")";
-            case AkitaType.Boolean ignored -> "BOOLEAN";
-        };
+        return column.name() + ":" + AkitaTypes.format(column.type());
     }
 
     private static void indent(StringBuilder builder, int depth) {

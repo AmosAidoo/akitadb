@@ -41,6 +41,11 @@ public class BufferPoolManager {
 
     private record FrameReservation(FrameId frameId, boolean pinnedForReuse) {}
 
+    @FunctionalInterface
+    private interface GuardFactory<T> {
+        T create(PageId pageId, Frame frame);
+    }
+
     private void loadPageIntoFrame(Frame frame, PageId pageId, ByteBuffer data) {
         frame.getData().put(data);
         frame.setPageId(pageId);
@@ -167,6 +172,25 @@ public class BufferPoolManager {
             latch.unlock();
         }
 
+        return loadPageFromDisk(pageId, (loadedPageId, frame) -> ReadPageGuard.create(loadedPageId, frame, replacer, this));
+    }
+
+    public WritePageGuard writePage(PageId pageId) throws InterruptedException, ExecutionException {
+        latch.lock();
+        try {
+            Frame frame = pageTable.get(pageId);
+            if (frame != null) {
+                replacer.recordAccess(frame.getFrameId(), pageId);
+                return WritePageGuard.create(pageId, frame, replacer, this);
+            }
+        } finally {
+            latch.unlock();
+        }
+
+        return loadPageFromDisk(pageId, (loadedPageId, frame) -> WritePageGuard.create(loadedPageId, frame, replacer, this));
+    }
+
+    private <T> T loadPageFromDisk(PageId pageId, GuardFactory<T> guardFactory) throws InterruptedException, ExecutionException {
         // Page not in pool — we need to find a frame, read from disk, then load it.
         // acquireFrameId() blocks here (without spinning) if no frame is available.
         latch.lock();
@@ -188,7 +212,7 @@ public class BufferPoolManager {
         latch.lock();
         try {
             loadPageIntoFrame(frame, pageId, data);
-            ReadPageGuard guard = ReadPageGuard.create(pageId, frame, replacer, this);
+            T guard = guardFactory.create(pageId, frame);
             if (reservation.pinnedForReuse()) {
                 frame.unpin();
             }
@@ -196,35 +220,6 @@ public class BufferPoolManager {
         } finally {
             latch.unlock();
         }
-    }
-
-    public WritePageGuard writePage(PageId pageId) throws InterruptedException, ExecutionException {
-        latch.lock();
-        try {
-            Frame frame = pageTable.get(pageId);
-            if (frame != null) {
-                replacer.recordAccess(frame.getFrameId(), pageId);
-                return WritePageGuard.create(pageId, frame, replacer, this);
-            }
-        } finally {
-            latch.unlock();
-        }
-
-        latch.lock();
-        FrameReservation reservation;
-        try {
-            reservation = acquireFrameId();
-        } finally {
-            latch.unlock();
-        }
-
-        Frame frame = frames.get(reservation.frameId());
-        prepareFrameForReuse(frame);
-
-        Future<ByteBuffer> future = diskScheduler.schedulePageRead(pageId);
-        ByteBuffer data = future.get();
-
-        return getWritePageGuard(pageId, reservation, frame, data);
     }
 
     public WritePageGuard allocatePage(PageId pageId) throws InterruptedException, ExecutionException {
